@@ -4,15 +4,15 @@
 -- Version : 2.0 — Mise à jour complète
 -- ===================================================================
 -- ORDRE DE CRÉATION (respect des dépendances FK) :
---   1. admins
---   2. semi_admins
---   3. currencies
---   4. countries
---   5. agents
---   6. payment_methods
---   7. balances
---   8. authorized_numbers
---   9. rates
+--   1. admins v
+--   2. semi_admins v
+--   3. currencies v
+--   4. countries v
+--   5. agents v
+--   6. payment_methods v
+--   7. balances v
+--   8. authorized_numbers v
+--   9. rates v
 --  10. transactions
 --  11. gains
 --  12. redirections
@@ -133,7 +133,16 @@ CREATE TABLE balances (
     UNIQUE (agent_id, currency_id),
     CONSTRAINT positive_balance CHECK (amount >= 0)
 );
+CREATE TABLE IF NOT EXISTS balance_transactions (
+    id SERIAL PRIMARY KEY,
+    balance_id INTEGER NOT NULL REFERENCES balances(id) ON DELETE CASCADE,
+    amount DECIMAL(15,2) NOT NULL,
+    type VARCHAR(10) NOT NULL CHECK (type IN ('credit', 'debit')),
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
+CREATE INDEX idx_balance_transactions_balance_id ON balance_transactions(balance_id);
 -- ===================================================================
 -- 8. NUMÉROS AGRÉÉS DE TRANSFERT
 -- ===================================================================
@@ -542,3 +551,16 @@ INSERT INTO countries (name, code, phone_prefix, currency_id) VALUES
     ('Cameroun',     'CMR', '+237', 3),
     ('Congo',        'COG', '+242', 3),
     ('Gabon',        'GAB', '+241', 3);
+-- Optionnel : créer un déclencheur pour mettre à jour updated_at automatiquement
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+   NEW.updated_at = NOW();
+   RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_semi_admins_updated_at
+BEFORE UPDATE ON semi_admins
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();

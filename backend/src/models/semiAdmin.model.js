@@ -1,36 +1,70 @@
 const db = require("../config/db");
 
-const SemiAdmin = {
-  create: async (data) => {
+const SemiAdminModel = {
+  // Créer un semi-admin
+  create: async ({ name, email, password }) => {
     const query = `
-      INSERT INTO semi_admins (name, email, password)
-      VALUES ($1, $2, $3)
-      RETURNING id, name, email, created_at
+      INSERT INTO semi_admins (name, email, password, is_active)
+      VALUES ($1, $2, $3, true)
+      RETURNING id, name, email, is_active, created_at
     `;
-    const values = [data.name, data.email, data.password];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const values = [name, email, password];
+    const { rows } = await db.query(query, values);
+    return rows[0];
   },
 
+  // Trouver par email (utilisé pour login et vérifications)
   findByEmail: async (email) => {
-    const result = await db.query(
-      `SELECT * FROM semi_admins WHERE email = $1`,
-      [email]
-    );
-    return result.rows[0];
+    const query = `SELECT * FROM semi_admins WHERE email = $1`;
+    const { rows } = await db.query(query, [email]);
+    return rows[0];
   },
 
-  findAll: async () => {
-    const result = await db.query(
-      `SELECT id, name, email, created_at FROM semi_admins ORDER BY id DESC`
-    );
-    return result.rows;
+  // Trouver par ID
+  findById: async (id) => {
+    const query = `SELECT id, name, email, is_active, created_at, updated_at FROM semi_admins WHERE id = $1`;
+    const { rows } = await db.query(query, [id]);
+    return rows[0];
   },
 
-  delete: async (id) => {
-    await db.query(`DELETE FROM semi_admins WHERE id = $1`, [id]);
+  // Récupérer tous les semi-admins (option : inclure les inactifs)
+  findAll: async (includeInactive = false) => {
+    let query = `
+      SELECT id, name, email, is_active, created_at, updated_at
+      FROM semi_admins
+    `;
+    if (!includeInactive) {
+      query += ` WHERE is_active = true`;
+    }
+    query += ` ORDER BY id DESC`;
+    const { rows } = await db.query(query);
+    return rows;
+  },
+
+  // Mettre à jour le statut (actif / inactif)
+  updateStatus: async (id, isActive) => {
+    const query = `
+      UPDATE semi_admins
+      SET is_active = $1, updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, name, email, is_active, updated_at
+    `;
+    const { rows } = await db.query(query, [isActive, id]);
+    return rows[0];
+  },
+
+  // Statistiques : total, actifs, inactifs
+  getStats: async () => {
+    const query = `
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_active = true) AS active,
+        COUNT(*) FILTER (WHERE is_active = false) AS inactive
+      FROM semi_admins
+    `;
+    const { rows } = await db.query(query);
+    return rows[0];
   },
 };
 
-module.exports = SemiAdmin;
+module.exports = SemiAdminModel;

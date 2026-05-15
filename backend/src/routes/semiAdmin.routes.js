@@ -1,13 +1,12 @@
 const express = require("express");
 const router = express.Router();
-
 const semiAdminController = require("../controllers/semiAdmin.controller");
-const {
-  verifyToken,
-  authorizeRoles,
-} = require("../middlewares/auth.middleware");
+const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
 
-// CREATE
+// --- Routes publiques ---
+router.post("/login", semiAdminController.loginSemiAdmin);
+
+// --- Routes protégées (admin uniquement) ---
 router.post(
   "/",
   verifyToken,
@@ -15,7 +14,6 @@ router.post(
   semiAdminController.createSemiAdmin
 );
 
-// GET ALL
 router.get(
   "/",
   verifyToken,
@@ -23,12 +21,18 @@ router.get(
   semiAdminController.getSemiAdmins
 );
 
-// DELETE
-router.delete(
-  "/:id",
+router.patch(
+  "/:id/status",
   verifyToken,
   authorizeRoles("admin"),
-  semiAdminController.deleteSemiAdmin
+  semiAdminController.updateSemiAdminStatus
+);
+
+router.get(
+  "/stats",
+  verifyToken,
+  authorizeRoles("admin"),
+  semiAdminController.getStatistics
 );
 
 module.exports = router;

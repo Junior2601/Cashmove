@@ -1,43 +1,40 @@
 const db = require("../config/db");
 
-const Country = {
-  create: async (data) => {
+const CountryModel = {
+  create: async (data, client = null) => {
     const query = `
       INSERT INTO countries (name, code, phone_prefix, currency_id, is_active)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
     const values = [
-      data.name, 
-      data.code, 
-      data.phone_prefix, 
+      data.name,
+      data.code,
+      data.phone_prefix,
       data.currency_id,
-      data.is_active !== undefined ? data.is_active : true
+      data.is_active ?? true,
     ];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, values);
+    return rows[0];
   },
 
-  // Pour admin - voir tous les pays (actifs + inactifs)
-  findAllForAdmin: async () => {
-    const result = await db.query(`
-      SELECT c.*, 
-             cur.name as currency_name, 
+  findAllForAdmin: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT c.*,
+             cur.name as currency_name,
              cur.code as currency_code,
              cur.symbol as currency_symbol
       FROM countries c
       LEFT JOIN currencies cur ON c.currency_id = cur.id
       ORDER BY c.id DESC
     `);
-    return result.rows;
+    return rows;
   },
 
-  // Pour utilisateurs normaux - voir uniquement les pays actifs avec leurs devises actives
-  findAllActive: async () => {
-    const result = await db.query(`
-      SELECT c.*, 
-             cur.name as currency_name, 
+  findAllActive: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT c.*,
+             cur.name as currency_name,
              cur.code as currency_code,
              cur.symbol as currency_symbol
       FROM countries c
@@ -45,13 +42,13 @@ const Country = {
       WHERE c.is_active = true
       ORDER BY c.name ASC
     `);
-    return result.rows;
+    return rows;
   },
 
-  findById: async (id) => {
-    const result = await db.query(
-      `SELECT c.*, 
-              cur.name as currency_name, 
+  findById: async (id, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT c.*,
+              cur.name as currency_name,
               cur.code as currency_code,
               cur.symbol as currency_symbol
        FROM countries c
@@ -59,72 +56,84 @@ const Country = {
        WHERE c.id = $1`,
       [id]
     );
-    return result.rows[0];
+    return rows[0];
   },
 
-  update: async (id, data) => {
+  update: async (id, data, client = null) => {
     const query = `
       UPDATE countries
-      SET name = $1, 
-          code = $2, 
-          phone_prefix = $3, 
-          currency_id = $4, 
+      SET name = $1,
+          code = $2,
+          phone_prefix = $3,
+          currency_id = $4,
           is_active = $5,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $6
       RETURNING *
     `;
     const values = [
-      data.name, 
-      data.code, 
-      data.phone_prefix, 
-      data.currency_id, 
+      data.name,
+      data.code,
+      data.phone_prefix,
+      data.currency_id,
       data.is_active,
-      id
+      id,
     ];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, values);
+    return rows[0];
   },
 
-  // Soft delete (désactiver uniquement)
-  softDelete: async (id) => {
+  softDelete: async (id, client = null) => {
     const query = `
       UPDATE countries
       SET is_active = false, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
       RETURNING *
     `;
-    const result = await db.query(query, [id]);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, [id]);
+    return rows[0];
   },
 
-  // Hard delete (suppression définitive - seulement pour admin super)
-  hardDelete: async (id) => {
-    await db.query(`DELETE FROM countries WHERE id = $1`, [id]);
+  hardDelete: async (id, client = null) => {
+    await (client || db).query(`DELETE FROM countries WHERE id = $1`, [id]);
   },
 
-  // Réactiver un pays
-  reactivate: async (id) => {
+  reactivate: async (id, client = null) => {
     const query = `
       UPDATE countries
       SET is_active = true, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
       RETURNING *
     `;
-    const result = await db.query(query, [id]);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, [id]);
+    return rows[0];
   },
 
-  // Vérifier si une devise est utilisée par un pays actif
-  isCurrencyUsedByActiveCountry: async (currencyId) => {
-    const result = await db.query(
-      `SELECT COUNT(*) FROM countries 
+  isCurrencyUsedByActiveCountry: async (currencyId, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT COUNT(*) FROM countries
        WHERE currency_id = $1 AND is_active = true`,
       [currencyId]
     );
-    return parseInt(result.rows[0].count) > 0;
-  }
+    return parseInt(rows[0].count) > 0;
+  },
+
+  // Vérifications d'unicité
+  findByName: async (name, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT * FROM countries WHERE name = $1`,
+      [name]
+    );
+    return rows[0];
+  },
+
+  findByCode: async (code, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT * FROM countries WHERE code = $1`,
+      [code]
+    );
+    return rows[0];
+  },
 };
 
-module.exports = Country;
+module.exports = CountryModel;

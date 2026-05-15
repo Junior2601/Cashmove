@@ -1,23 +1,21 @@
 const db = require("../config/db");
 
-const Balance = {
-  create: async (data) => {
+const BalanceModel = {
+  create: async (data, client = null) => {
     const query = `
       INSERT INTO balances (agent_id, currency_id, amount)
       VALUES ($1, $2, $3)
       RETURNING *
     `;
-    const values = [data.agent_id, data.currency_id, data.amount || 0];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const values = [data.agent_id, data.currency_id, data.amount ?? 0];
+    const { rows } = await (client || db).query(query, values);
+    return rows[0];
   },
 
-  // Pour admin - voir toutes les balances (actives)
-  findAllForAdmin: async () => {
-    const result = await db.query(`
-      SELECT b.*, 
-             a.name as agent_name, 
+  findAllForAdmin: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT b.*,
+             a.name as agent_name,
              a.email as agent_email,
              c.code as currency_code,
              c.name as currency_name,
@@ -28,14 +26,13 @@ const Balance = {
       WHERE b.deleted_at IS NULL
       ORDER BY b.id DESC
     `);
-    return result.rows;
+    return rows;
   },
 
-  // Pour semi-admin - voir toutes les balances des agents
-  findAllForSemiAdmin: async () => {
-    const result = await db.query(`
-      SELECT b.*, 
-             a.name as agent_name, 
+  findAllForSemiAdmin: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT b.*,
+             a.name as agent_name,
              a.email as agent_email,
              c.code as currency_code,
              c.name as currency_name,
@@ -46,14 +43,14 @@ const Balance = {
       WHERE b.deleted_at IS NULL AND a.is_active = true
       ORDER BY a.name ASC, c.code ASC
     `);
-    return result.rows;
+    return rows;
   },
 
-  // Pour agent - voir ses propres balances
-  findByAgent: async (agent_id) => {
-    const result = await db.query(`
-      SELECT b.*, 
-             a.name as agent_name, 
+  findByAgent: async (agent_id, client = null) => {
+    const { rows } = await (client || db).query(
+      `
+      SELECT b.*,
+             a.name as agent_name,
              a.email as agent_email,
              c.code as currency_code,
              c.name as currency_name,
@@ -63,15 +60,17 @@ const Balance = {
       LEFT JOIN currencies c ON b.currency_id = c.id
       WHERE b.agent_id = $1 AND b.deleted_at IS NULL
       ORDER BY c.code ASC
-    `, [agent_id]);
-    return result.rows;
+      `,
+      [agent_id]
+    );
+    return rows;
   },
 
-  // Trouver une balance par ID
-  findById: async (id) => {
-    const result = await db.query(`
-      SELECT b.*, 
-             a.name as agent_name, 
+  findById: async (id, client = null) => {
+    const { rows } = await (client || db).query(
+      `
+      SELECT b.*,
+             a.name as agent_name,
              a.email as agent_email,
              c.code as currency_code,
              c.name as currency_name,
@@ -80,164 +79,103 @@ const Balance = {
       LEFT JOIN agents a ON b.agent_id = a.id
       LEFT JOIN currencies c ON b.currency_id = c.id
       WHERE b.id = $1 AND b.deleted_at IS NULL
-    `, [id]);
-    return result.rows[0];
-  },
-
-  // Trouver une balance par agent et devise
-  findByAgentAndCurrency: async (agent_id, currency_id) => {
-    const result = await db.query(`
-      SELECT * FROM balances 
-      WHERE agent_id = $1 AND currency_id = $2 AND deleted_at IS NULL
-    `, [agent_id, currency_id]);
-    return result.rows[0];
-  },
-
-  // Créditer une balance (augmenter le montant)
-  credit: async (id, amount, description = null) => {
-    const client = await db.getClient();
-    try {
-      await client.query('BEGIN');
-      
-      // Mettre à jour le montant
-      const updateQuery = `
-        UPDATE balances 
-        SET amount = amount + $1, last_updated = CURRENT_TIMESTAMP
-        WHERE id = $2 AND deleted_at IS NULL
-        RETURNING *
-      `;
-      const result = await client.query(updateQuery, [amount, id]);
-      
-      if (!result.rows[0]) {
-        throw new Error('Balance not found');
-      }
-      
-      // Optionnel: Enregistrer la transaction dans une table d'historique
-      if (description) {
-        await client.query(`
-          INSERT INTO balance_transactions (balance_id, amount, type, description, created_at)
-          VALUES ($1, $2, 'credit', $3, CURRENT_TIMESTAMP)
-        `, [id, amount, description]);
-      }
-      
-      await client.query('COMMIT');
-      return result.rows[0];
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  },
-
-  // Débiter une balance (diminuer le montant)
-  debit: async (id, amount, description = null) => {
-    const client = await db.getClient();
-    try {
-      await client.query('BEGIN');
-      
-      // Vérifier le solde avant débit
-      const checkQuery = `SELECT amount FROM balances WHERE id = $1 AND deleted_at IS NULL`;
-      const checkResult = await client.query(checkQuery, [id]);
-      
-      if (!checkResult.rows[0]) {
-        throw new Error('Balance not found');
-      }
-      
-      const currentAmount = parseFloat(checkResult.rows[0].amount);
-      if (currentAmount < amount) {
-        throw new Error('Insufficient balance');
-      }
-      
-      // Mettre à jour le montant
-      const updateQuery = `
-        UPDATE balances 
-        SET amount = amount - $1, last_updated = CURRENT_TIMESTAMP
-        WHERE id = $2 AND deleted_at IS NULL
-        RETURNING *
-      `;
-      const result = await client.query(updateQuery, [amount, id]);
-      
-      // Optionnel: Enregistrer la transaction dans une table d'historique
-      if (description) {
-        await client.query(`
-          INSERT INTO balance_transactions (balance_id, amount, type, description, created_at)
-          VALUES ($1, $2, 'debit', $3, CURRENT_TIMESTAMP)
-        `, [id, amount, description]);
-      }
-      
-      await client.query('COMMIT');
-      return result.rows[0];
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  },
-
-  // Mettre à jour le montant (méthode générique)
-  updateAmount: async (id, amount) => {
-    const result = await db.query(
-      `UPDATE balances 
-       SET amount = $1, last_updated = CURRENT_TIMESTAMP 
-       WHERE id = $2 AND deleted_at IS NULL 
-       RETURNING *`,
-      [amount, id]
+      `,
+      [id]
     );
-    return result.rows[0];
+    return rows[0];
   },
 
-  // Soft delete (suppression logique)
-  softDelete: async (id) => {
-    const query = `
-      UPDATE balances
-      SET deleted_at = CURRENT_TIMESTAMP
-      WHERE id = $1
-      RETURNING *
-    `;
-    const result = await db.query(query, [id]);
-    return result.rows[0];
-  },
-
-  // Hard delete (suppression définitive - seulement pour admin super)
-  hardDelete: async (id) => {
-    await db.query(`DELETE FROM balances WHERE id = $1`, [id]);
-  },
-
-  // Vérifier si un agent a une balance pour une devise
-  hasBalance: async (agent_id, currency_id) => {
-    const result = await db.query(
-      `SELECT id FROM balances 
+  findByAgentAndCurrency: async (agent_id, currency_id, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT * FROM balances
        WHERE agent_id = $1 AND currency_id = $2 AND deleted_at IS NULL`,
       [agent_id, currency_id]
     );
-    return result.rows[0] || null;
+    return rows[0];
   },
 
-  // Obtenir le total des balances d'un agent
-  getTotalBalanceByAgent: async (agent_id) => {
-    const result = await db.query(`
-      SELECT SUM(b.amount) as total_amount
-      FROM balances b
-      WHERE b.agent_id = $1 AND b.deleted_at IS NULL
-    `, [agent_id]);
-    return parseFloat(result.rows[0].total_amount) || 0;
+  updateAmount: async (id, amount, client = null) => {
+    const { rows } = await (client || db).query(
+      `UPDATE balances
+       SET amount = $1, last_updated = CURRENT_TIMESTAMP
+       WHERE id = $2 AND deleted_at IS NULL
+       RETURNING *`,
+      [amount, id]
+    );
+    return rows[0];
   },
 
-  // Obtenir les balances par devise
-  getBalancesByCurrency: async (currency_id) => {
-    const result = await db.query(`
-      SELECT b.*, 
-             a.name as agent_name, 
+  softDelete: async (id, client = null) => {
+    const { rows } = await (client || db).query(
+      `UPDATE balances
+       SET deleted_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+    return rows[0];
+  },
+
+  hardDelete: async (id, client = null) => {
+    await (client || db).query(`DELETE FROM balances WHERE id = $1`, [id]);
+  },
+
+  hasBalance: async (agent_id, currency_id, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT id FROM balances
+       WHERE agent_id = $1 AND currency_id = $2 AND deleted_at IS NULL`,
+      [agent_id, currency_id]
+    );
+    return rows[0] || null;
+  },
+
+  getTotalBalanceByAgent: async (agent_id, client = null) => {
+    const { rows } = await (client || db).query(
+      `SELECT COALESCE(SUM(amount), 0) as total
+       FROM balances
+       WHERE agent_id = $1 AND deleted_at IS NULL`,
+      [agent_id]
+    );
+    return parseFloat(rows[0].total);
+  },
+
+  getBalancesByCurrency: async (currency_id, client = null) => {
+    const { rows } = await (client || db).query(
+      `
+      SELECT b.*,
+             a.name as agent_name,
              a.email as agent_email
       FROM balances b
       LEFT JOIN agents a ON b.agent_id = a.id
       WHERE b.currency_id = $1 AND b.deleted_at IS NULL AND b.amount > 0
       ORDER BY b.amount DESC
-    `, [currency_id]);
-    return result.rows;
-  }
+      `,
+      [currency_id]
+    );
+    return rows;
+  },
+
+  // Utilisé pour les opérations de credit/debit atomiques
+  atomicAddAmount: async (id, increment, client) => {
+    const { rows } = await client.query(
+      `UPDATE balances
+       SET amount = amount + $1, last_updated = CURRENT_TIMESTAMP
+       WHERE id = $2 AND deleted_at IS NULL
+       RETURNING *`,
+      [increment, id]
+    );
+    if (!rows[0]) throw new Error("Balance not found");
+    return rows[0];
+  },
+
+  getAmountForUpdate: async (id, client) => {
+    const { rows } = await client.query(
+      `SELECT amount FROM balances WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+      [id]
+    );
+    if (!rows[0]) throw new Error("Balance not found");
+    return rows[0].amount;
+  },
 };
 
-module.exports = Balance;
+module.exports = BalanceModel;

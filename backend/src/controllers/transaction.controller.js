@@ -27,6 +27,74 @@ const createTransaction = async (req, res) => {
   }
 };
 
+// GET transaction by ID (accessible par client, agent, semi-admin, admin)
+const getTransactionByIdController = async (req, res) => {
+  try {
+    const { transaction_id } = req.params;
+    const user = req.user; // Peut être undefined pour les clients non authentifiés
+    
+    // Récupérer la transaction avec les détails
+    const transaction = await Transaction.findById(transaction_id);
+    
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: "Transaction non trouvée"
+      });
+    }
+    
+    // Vérifier les droits d'accès selon le type d'utilisateur
+    let hasAccess = false;
+    
+    if (!user) {
+      // Client non authentifié - ne peut voir que les transactions en attente (pour validation client)
+      // Normalement les clients utilisent le tracking_code, pas l'ID
+      hasAccess = transaction.status === 'en_attente';
+    } 
+    else if (user.role === 'admin' || user.role === 'semi_admin') {
+      // Admin et semi-admin peuvent voir toutes les transactions
+      hasAccess = true;
+    } 
+    else if (user.role === 'agent') {
+      // Agent ne peut voir que ses propres transactions
+      hasAccess = transaction.assigned_agent_id === user.id;
+    }
+    else {
+      // Autres types d'utilisateurs
+      hasAccess = false;
+    }
+    
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "Vous n'êtes pas autorisé à consulter cette transaction"
+      });
+    }
+    
+    // Récupérer les détails complets de la transaction (avec jointures)
+    const transactionDetails = await Transaction.findDetailedById(transaction_id);
+    
+    // Optionnel: récupérer l'historique de la transaction
+    const history = await History.findByEntity("transaction", transaction_id);
+    
+    res.json({
+      success: true,
+      data: {
+        transaction: transactionDetails,
+        history: history // Optionnel, peut être retiré si trop lourd
+      }
+    });
+    
+  } catch (err) {
+    console.error("Erreur dans getTransactionByIdController:", err);
+    res.status(500).json({
+      success: false,
+      message: "Erreur lors de la récupération de la transaction",
+      error: err.message
+    });
+  }
+};
+
 // TRACKING (client)
 const trackTransaction = async (req, res) => {
   try {
@@ -169,6 +237,7 @@ const getTransactionHistory = async (req, res) => {
 
 module.exports = {
   createTransaction,
+  getTransactionByIdController,
   trackTransaction,
   validateTransaction,
   finalizeTransaction,

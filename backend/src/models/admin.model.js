@@ -1,7 +1,7 @@
 const db = require("../config/db");
 
 const Admin = {
-  // créer admin
+  // Créer un admin
   create: async (data) => {
     const query = `
       INSERT INTO admins (name, email, password)
@@ -9,12 +9,11 @@ const Admin = {
       RETURNING id, name, email, created_at
     `;
     const values = [data.name, data.email, data.password];
-
     const result = await db.query(query, values);
     return result.rows[0];
   },
 
-  // trouver par email
+  // Trouver par email
   findByEmail: async (email) => {
     const result = await db.query(
       `SELECT * FROM admins WHERE email = $1`,
@@ -23,7 +22,7 @@ const Admin = {
     return result.rows[0];
   },
 
-  // trouver par id
+  // Trouver par id
   findById: async (id) => {
     const result = await db.query(
       `SELECT id, name, email, created_at FROM admins WHERE id = $1`,
@@ -32,7 +31,7 @@ const Admin = {
     return result.rows[0];
   },
 
-  // récupérer tous
+  // Récupérer tous les admins
   findAll: async () => {
     const result = await db.query(
       `SELECT id, name, email, created_at FROM admins ORDER BY id DESC`
@@ -40,7 +39,7 @@ const Admin = {
     return result.rows;
   },
 
-  // supprimer
+  // Supprimer un admin
   delete: async (id) => {
     await db.query(`DELETE FROM admins WHERE id = $1`, [id]);
   },

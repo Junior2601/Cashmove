@@ -14,8 +14,7 @@ const selectRandomAgentAndNumber = async (from_country_id, sender_method_id) => 
      WHERE an.country_id = $1 
      AND an.payment_method_id = $2 
      AND an.is_active = true 
-     AND a.is_active = true
-     AND a.can_process = true`,
+     AND a.is_active = true`,
     [from_country_id, sender_method_id]
   );
 
@@ -161,16 +160,24 @@ const finalizeTransactionService = async (transaction_id, actor) => {
   const client = await db.getClient();
 
   try {
+    // Ajouter un timeout pour éviter les blocages infinis
+    await client.query('SET LOCAL statement_timeout = "30s"');
+    
     await client.query("BEGIN");
 
-    // 1. Récupérer transaction avec verrou
-    const tx = await Transaction.findById(transaction_id, true);
+    // 1. Récupérer transaction avec verrou et timeout
+    const txResult = await client.query(
+      `SELECT * FROM transactions WHERE id = $1 FOR UPDATE NOWAIT`,
+      [transaction_id]
+    );
+    
+    const tx = txResult.rows[0];
     if (!tx) throw new Error("Transaction introuvable");
 
     if (tx.status !== "validee")
       throw new Error("Transaction non validée par le client");
 
-    // 2. Vérifier que l'agent a le droit (si c'est un agent)
+    // 2. Vérifier que l'agent a le droit
     if (actor.type === "agent" && tx.assigned_agent_id !== actor.id) {
       throw new Error("Vous n'êtes pas autorisé à traiter cette transaction");
     }
@@ -185,7 +192,7 @@ const finalizeTransactionService = async (transaction_id, actor) => {
     if (!agent || !agent.is_active) throw new Error("Agent inactif");
     if (!agent.can_process) throw new Error("Agent non autorisé à traiter");
 
-    // 4. Récupérer les informations des devises et pays
+    // 4. Récupérer les informations des devises
     const countriesInfo = await client.query(
       `SELECT 
         c_from.id as from_country_id, c_from.name as from_country,
@@ -201,15 +208,8 @@ const finalizeTransactionService = async (transaction_id, actor) => {
     );
     
     const currencyInfo = countriesInfo.rows[0];
-    
-    //console.log(`=== DÉBUT TRAITEMENT TRANSACTION ${tx.tracking_code} ===`);
-    //console.log(`Agent: ${agent.name} (ID: ${agent.id})`);
-    //console.log(`Pays d'envoi: ${currencyInfo.from_country} (${currencyInfo.from_currency_code})`);
-    //console.log(`Pays de réception: ${currencyInfo.to_country} (${currencyInfo.to_currency_code})`);
-    //console.log(`Montant à créditer à l'agent: +${tx.send_amount} ${currencyInfo.from_currency_code}`);
-    //console.log(`Montant à débiter de l'agent: -${tx.receive_amount} ${currencyInfo.to_currency_code}`);
 
-    // 5. CRÉDITER la balance dans la devise d'envoi (l'agent reçoit l'argent)
+    // 5. CRÉDITER la balance
     const creditBalanceRes = await client.query(
       `SELECT * FROM balances 
        WHERE agent_id = $1 
@@ -230,10 +230,8 @@ const finalizeTransactionService = async (transaction_id, actor) => {
       `UPDATE balances SET amount = $1, updated_at = NOW() WHERE id = $2`,
       [newSendAmount, sendCurrencyBalance.id]
     );
-    
-    //console.log(`✅ Balance ${currencyInfo.from_currency_code}: ${oldSendAmount} → +${tx.send_amount} = ${newSendAmount}`);
 
-    // 6. VÉRIFIER et DÉBITER la balance dans la devise de réception (l'agent envoie l'argent)
+    // 6. VÉRIFIER et DÉBITER la balance
     const debitBalanceRes = await client.query(
       `SELECT * FROM balances 
        WHERE agent_id = $1 
@@ -259,14 +257,10 @@ const finalizeTransactionService = async (transaction_id, actor) => {
       `UPDATE balances SET amount = $1, updated_at = NOW() WHERE id = $2`,
       [newReceiveAmount, receiveCurrencyBalance.id]
     );
-    
-    //console.log(`✅ Balance ${currencyInfo.to_currency_code}: ${oldReceiveAmount} → -${tx.receive_amount} = ${newReceiveAmount}`);
 
-    // 7. Calculer le gain de l'agent (commission sur le montant reçu)
+    // 7. Calculer et enregistrer le gain
     const gain = calculateAgentGain(tx.receive_amount, tx.commission_applied);
-    //console.log(`💰 Gain calculé: ${gain} ${currencyInfo.to_currency_code} (${tx.commission_applied}% de ${tx.receive_amount})`);
-
-    // 8. Enregistrer le gain dans la table gains (sans impacter la balance)
+    
     await client.query(
       `INSERT INTO gains (
         transaction_id,
@@ -279,14 +273,18 @@ const finalizeTransactionService = async (transaction_id, actor) => {
       VALUES ($1, $2, $3, $4, $5, NOW())`,
       [tx.id, agent.id, currencyInfo.to_currency_id, gain, tx.commission_applied]
     );
-    
-    //console.log(`📝 Gain enregistré dans la table gains`);
 
-    // 9. Finaliser la transaction
-    await Transaction.complete(transaction_id, actor);
-    
-    //console.log(`✅ Transaction ${tx.tracking_code} finalisée avec succès`);
-    //console.log(`=== FIN TRAITEMENT ===`);
+    // 8. Finaliser la transaction
+    await client.query(
+      `UPDATE transactions
+       SET status = 'effectuee',
+           processed_by_type = $1,
+           processed_by_id = $2,
+           completed_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3`,
+      [actor.type, actor.id, tx.id]
+    );
 
     await client.query("COMMIT");
 
@@ -320,17 +318,20 @@ const finalizeTransactionService = async (transaction_id, actor) => {
   } catch (error) {
     await client.query("ROLLBACK");
     
-    console.error(`❌ Erreur finalisation transaction ${transaction_id}:`, error.message);
+    console.error(`❌ Erreur finalisation:`, error.message);
     
-    await History.create({
-      action_type: "transaction_failed",
-      actor_type: actor.type,
-      actor_id: actor.id,
-      entity_type: "transaction",
-      entity_id: transaction_id,
-      description: `Échec de finalisation: ${error.message}`,
-      metadata: JSON.stringify({ error: error.message })
-    });
+    // Ne pas logger si c'est juste un timeout ou nowait
+    if (!error.message.includes('NOWAIT') && !error.message.includes('timeout')) {
+      await History.create({
+        action_type: "transaction_failed",
+        actor_type: actor.type,
+        actor_id: actor.id,
+        entity_type: "transaction",
+        entity_id: transaction_id,
+        description: `Échec de finalisation: ${error.message}`,
+        metadata: JSON.stringify({ error: error.message })
+      }).catch(e => console.error('Log error:', e.message));
+    }
     
     throw error;
   } finally {

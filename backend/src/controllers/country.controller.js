@@ -1,10 +1,10 @@
-const Country = require("../models/country.model");
+const CountryService = require("../services/country.service");
 
-// CREATE - Admin seulement
+const getUserRole = (req) => req.user?.role || null;
+
 const createCountry = async (req, res) => {
   try {
     const { name, code, phone_prefix, currency_id, is_active } = req.body;
-
     if (!name || !code || !phone_prefix || !currency_id) {
       return res.status(400).json({
         success: false,
@@ -12,12 +12,12 @@ const createCountry = async (req, res) => {
       });
     }
 
-    const country = await Country.create({
+    const country = await CountryService.createCountry({
       name,
       code,
       phone_prefix,
       currency_id,
-      is_active
+      is_active,
     });
 
     res.status(201).json({
@@ -27,49 +27,24 @@ const createCountry = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    if (error.code === '23505') {
-      if (error.constraint === 'countries_name_key') {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Ce nom de pays existe déjà" 
-        });
-      }
-      if (error.constraint === 'countries_code_key') {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Ce code de pays existe déjà" 
-        });
-      }
-    }
-    if (error.code === '23503') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Devise non valide" 
-      });
-    }
-    res.status(500).json({ success: false, message: "Erreur serveur" });
+    const messages = {
+      "Ce nom de pays existe déjà": 400,
+      "Ce code de pays existe déjà": 400,
+      "Devise non valide": 400,
+    };
+    const status = messages[error.message] || 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 
-// GET ALL - Différenciation selon rôle
 const getCountries = async (req, res) => {
   try {
-    // Si l'utilisateur est admin, il voit tous les pays
-    if (req.user && req.user.role === 'admin') {
-      const countries = await Country.findAllForAdmin();
-      return res.json({
-        success: true,
-        data: countries,
-        message: "Tous les pays (actifs et inactifs)",
-      });
-    }
-    
-    // Sinon (utilisateur normal ou non authentifié), seulement les actifs
-    const countries = await Country.findAllActive();
+    const role = getUserRole(req);
+    const countries = await CountryService.getCountries(role);
     res.json({
       success: true,
       data: countries,
-      message: "Pays actifs uniquement",
+      message: role === "admin" ? "Tous les pays" : "Pays actifs uniquement",
     });
   } catch (error) {
     console.error(error);
@@ -77,183 +52,105 @@ const getCountries = async (req, res) => {
   }
 };
 
-// GET BY ID - Admin voit tout, autres voient seulement si actif
 const getCountryById = async (req, res) => {
   try {
     const { id } = req.params;
-    const country = await Country.findById(id);
-
-    if (!country) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
-
-    // Si l'utilisateur n'est pas admin et que le pays est inactif
-    if ((!req.user || req.user.role !== 'admin') && !country.is_active) {
-      return res.status(403).json({
-        success: false,
-        message: "Accès non autorisé à ce pays",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: country,
-    });
+    const role = getUserRole(req);
+    const country = await CountryService.getCountryById(id, role);
+    res.json({ success: true, data: country });
   } catch (error) {
-    console.error(error);
+    if (error.message === "Pays non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Accès non autorisé à ce pays") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// UPDATE - Admin seulement
 const updateCountry = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, code, phone_prefix, currency_id, is_active } = req.body;
+    const role = getUserRole(req);
 
-    // Vérifier si le pays existe
-    const existingCountry = await Country.findById(id);
-    if (!existingCountry) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
+    const updated = await CountryService.updateCountry(
+      id,
+      { name, code, phone_prefix, currency_id, is_active },
+      role
+    );
 
-    const updated = await Country.update(id, {
-      name,
-      code,
-      phone_prefix,
-      currency_id,
-      is_active
-    });
-
-    res.json({
-      success: true,
-      data: updated,
-      message: "Pays mis à jour avec succès",
-    });
+    res.json({ success: true, data: updated, message: "Pays mis à jour avec succès" });
   } catch (error) {
     console.error(error);
-    if (error.code === '23505') {
-      if (error.constraint === 'countries_name_key') {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Ce nom de pays existe déjà" 
-        });
-      }
-      if (error.constraint === 'countries_code_key') {
-        return res.status(400).json({ 
-          success: false, 
-          message: "Ce code de pays existe déjà" 
-        });
-      }
-    }
-    if (error.code === '23503') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Devise non valide" 
-      });
-    }
-    res.status(500).json({ success: false, message: "Erreur serveur" });
+    const errorMap = {
+      "Pays non trouvé": 404,
+      "Accès refusé": 403,
+      "Ce nom de pays existe déjà": 400,
+      "Ce code de pays existe déjà": 400,
+      "Devise non valide": 400,
+    };
+    const status = errorMap[error.message] || 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 
-// SOFT DELETE (Désactiver) - Admin seulement
 const disableCountry = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const existingCountry = await Country.findById(id);
-    if (!existingCountry) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
-
-    if (!existingCountry.is_active) {
-      return res.status(400).json({
-        success: false,
-        message: "Ce pays est déjà désactivé",
-      });
-    }
-
-    const disabled = await Country.softDelete(id);
-
-    res.json({
-      success: true,
-      data: disabled,
-      message: "Pays désactivé avec succès",
-    });
+    const role = getUserRole(req);
+    const disabled = await CountryService.disableCountry(id, role);
+    res.json({ success: true, data: disabled, message: "Pays désactivé avec succès" });
   } catch (error) {
-    console.error(error);
+    if (error.message === "Pays non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    if (error.message === "Ce pays est déjà désactivé") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// REACTIVATE - Admin seulement
 const reactivateCountry = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const existingCountry = await Country.findById(id);
-    if (!existingCountry) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
-
-    if (existingCountry.is_active) {
-      return res.status(400).json({
-        success: false,
-        message: "Ce pays est déjà actif",
-      });
-    }
-
-    const reactivated = await Country.reactivate(id);
-
-    res.json({
-      success: true,
-      data: reactivated,
-      message: "Pays réactivé avec succès",
-    });
+    const role = getUserRole(req);
+    const reactivated = await CountryService.reactivateCountry(id, role);
+    res.json({ success: true, data: reactivated, message: "Pays réactivé avec succès" });
   } catch (error) {
-    console.error(error);
+    if (error.message === "Pays non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    if (error.message === "Ce pays est déjà actif") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// HARD DELETE (Suppression définitive) - Admin seulement
 const deleteCountry = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const existingCountry = await Country.findById(id);
-    if (!existingCountry) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
-
-    await Country.hardDelete(id);
-
-    res.json({
-      success: true,
-      message: "Pays supprimé définitivement",
-    });
+    const role = getUserRole(req);
+    await CountryService.deleteCountry(id, role);
+    res.json({ success: true, message: "Pays supprimé définitivement" });
   } catch (error) {
-    console.error(error);
-    if (error.code === '23503') {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Impossible de supprimer ce pays car il est utilisé par d'autres entités" 
-      });
+    if (error.message === "Pays non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    if (error.message === "Impossible de supprimer ce pays car il est utilisé par d'autres entités") {
+      return res.status(400).json({ success: false, message: error.message });
     }
     res.status(500).json({ success: false, message: "Erreur serveur" });
   }

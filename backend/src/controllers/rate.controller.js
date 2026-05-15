@@ -1,19 +1,18 @@
-const Rate = require("../models/rate.model");
-const Currency = require("../models/currency.model");
-const Country = require("../models/country.model");
+const RateService = require("../services/rate.service");
 
-// CREATE OR UPDATE - Admin seulement
-const createOrUpdateRate = async (req, res) => {
+const getUserRole = (req) => req.user?.role || null;
+const getUserId = (req) => req.user?.id || null;
+
+// UPSERT (create or update)
+const upsertRate = async (req, res) => {
   try {
     const {
       from_currency_id,
       to_currency_id,
       rate,
       commission_percent,
-      is_active
+      is_active,
     } = req.body;
-
-    const admin_id = req.user.id;
 
     if (!from_currency_id || !to_currency_id || !rate) {
       return res.status(400).json({
@@ -22,426 +21,212 @@ const createOrUpdateRate = async (req, res) => {
       });
     }
 
-    if (from_currency_id === to_currency_id) {
-      return res.status(400).json({
-        success: false,
-        message: "Les devises source et destination doivent être différentes",
-      });
-    }
+    const result = await RateService.upsertRate(
+      { from_currency_id, to_currency_id, rate, commission_percent, is_active },
+      getUserId(req),
+      getUserRole(req)
+    );
 
-    // Vérifier si les devises existent
-    const fromCurrency = await Currency.findById(from_currency_id);
-    const toCurrency = await Currency.findById(to_currency_id);
-    
-    if (!fromCurrency || !toCurrency) {
-      return res.status(404).json({
-        success: false,
-        message: "Devise source ou destination non trouvée",
-      });
-    }
-
-    // Vérifier si un taux existe déjà pour cette paire
-    const existing = await Rate.existsForPair(from_currency_id, to_currency_id);
-
-    let result;
-
-    if (existing) {
-      // UPDATE
-      result = await Rate.update(existing.id, {
-        rate,
-        commission_percent: commission_percent !== undefined ? commission_percent : 0.75,
-        is_active: is_active !== undefined ? is_active : true,
-      });
-      
-      return res.json({
-        success: true,
-        data: result,
-        message: "Taux de change mis à jour avec succès",
-      });
-    } else {
-      // CREATE
-      result = await Rate.create({
-        from_currency_id,
-        to_currency_id,
-        rate,
-        commission_percent: commission_percent !== undefined ? commission_percent : 0.75,
-        created_by: admin_id,
-      });
-      
-      // Si is_active est false, désactiver après création
-      if (is_active === false) {
-        result = await Rate.toggleActive(result.id, false);
-      }
-      
-      return res.status(201).json({
-        success: true,
-        data: result,
-        message: "Taux de change créé avec succès",
-      });
-    }
+    const status = result.created_at === result.updated_at ? 201 : 200;
+    res.status(status).json({
+      success: true,
+      data: result,
+      message: result.created_at === result.updated_at ? "Taux créé" : "Taux mis à jour",
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    const errorMap = {
+      "Accès refusé": 403,
+      "Devise source ou destination non trouvée": 404,
+      "Les devises source et destination doivent être différentes": 400,
+      "Un taux existe déjà pour cette paire. Utilisez update à la place.": 400,
+    };
+    const status = errorMap[error.message] || 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 
-// GET ALL RATES (admin seulement)
+// GET ALL (admin only)
 const getAllRates = async (req, res) => {
   try {
-    // Seul l'admin peut voir tous les taux
-    if (req.user && req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: "Accès non autorisé",
-      });
-    }
-
-    const rates = await Rate.findAllForAdmin();
-
-    res.json({
-      success: true,
-      data: rates,
-      message: "Tous les taux de change",
-    });
+    const rates = await RateService.getAllRatesForAdmin(getUserRole(req));
+    res.json({ success: true, data: rates });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    res.status(403).json({ success: false, message: error.message });
   }
 };
 
-// GET ACTIVE RATES (public)
+// GET ACTIVE (public)
 const getActiveRates = async (req, res) => {
   try {
-    const rates = await Rate.findAllActive();
-
-    res.json({
-      success: true,
-      data: rates,
-      message: "Taux de change actifs",
-    });
+    const rates = await RateService.getActiveRates();
+    res.json({ success: true, data: rates });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// GET RATE BY ID (admin seulement)
+// GET BY ID (admin only)
 const getRateById = async (req, res) => {
   try {
     const { id } = req.params;
-    const rate = await Rate.findById(id);
-
-    if (!rate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change non trouvé",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: rate,
-    });
+    const rate = await RateService.getRateById(id, getUserRole(req));
+    res.json({ success: true, data: rate });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Taux de change non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// GET ACTIVE RATE BY CURRENCY PAIR (public)
+// ACTIVE RATE BY PAIR (public)
 const getActiveRateByPair = async (req, res) => {
   try {
     const { from_currency_id, to_currency_id } = req.params;
-
-    const rate = await Rate.findActiveRate(from_currency_id, to_currency_id);
-
-    if (!rate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change actif non trouvé pour cette paire de devises",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: rate,
-    });
+    const rate = await RateService.getActiveRateByPair(from_currency_id, to_currency_id);
+    res.json({ success: true, data: rate });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message.includes("non trouvé")) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// GET ACTIVE RATE BY CURRENCY CODES (public)
 const getActiveRateByCodes = async (req, res) => {
   try {
     const { from_code, to_code } = req.params;
-
-    const rate = await Rate.findActiveRateByCode(from_code, to_code);
-
-    if (!rate) {
-      return res.status(404).json({
-        success: false,
-        message: `Taux de change actif non trouvé pour ${from_code} → ${to_code}`,
-      });
-    }
-
-    res.json({
-      success: true,
-      data: rate,
-    });
+    const rate = await RateService.getActiveRateByCodes(from_code, to_code);
+    res.json({ success: true, data: rate });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message.includes("non trouvé")) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// GET ACTIVE RATES BY COUNTRY (public)
 const getActiveRatesByCountry = async (req, res) => {
   try {
     const { country_id } = req.params;
-
-    const country = await Country.findById(country_id);
-    if (!country) {
-      return res.status(404).json({
-        success: false,
-        message: "Pays non trouvé",
-      });
-    }
-
-    const rates = await Rate.findActiveRatesByCountry(country_id);
-
-    res.json({
-      success: true,
-      data: rates,
-      message: `Taux de change pour ${country.name}`,
-    });
+    const rates = await RateService.getActiveRatesByCountry(country_id);
+    res.json({ success: true, data: rates });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// GET ACTIVE RATES BY CURRENCY (public)
 const getActiveRatesByCurrency = async (req, res) => {
   try {
     const { currency_id } = req.params;
-
-    const currency = await Currency.findById(currency_id);
-    if (!currency) {
-      return res.status(404).json({
-        success: false,
-        message: "Devise non trouvée",
-      });
-    }
-
-    const rates = await Rate.findActiveRatesByCurrency(currency_id);
-
-    res.json({
-      success: true,
-      data: rates,
-      message: `Taux de change pour la devise ${currency.code}`,
-    });
+    const rates = await RateService.getActiveRatesByCurrency(currency_id);
+    res.json({ success: true, data: rates });
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// UPDATE RATE (admin seulement)
+// UPDATE RATE (admin only)
 const updateRate = async (req, res) => {
   try {
     const { id } = req.params;
     const { rate, commission_percent, is_active } = req.body;
-
-    const existingRate = await Rate.findById(id);
-    if (!existingRate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change non trouvé",
-      });
-    }
-
-    const updated = await Rate.update(id, {
-      rate: rate || existingRate.rate,
-      commission_percent: commission_percent !== undefined ? commission_percent : existingRate.commission_percent,
-      is_active: is_active !== undefined ? is_active : existingRate.is_active,
-    });
-
-    res.json({
-      success: true,
-      data: updated,
-      message: "Taux de change mis à jour avec succès",
-    });
+    const updated = await RateService.updateRate(
+      id,
+      { rate, commission_percent, is_active },
+      getUserRole(req)
+    );
+    res.json({ success: true, data: updated, message: "Taux mis à jour" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    if (error.message === "Taux de change non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// TOGGLE ACTIVE STATUS (admin seulement)
 const toggleRateActive = async (req, res) => {
   try {
     const { id } = req.params;
     const { is_active } = req.body;
-
     if (is_active === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "Le statut is_active est requis",
-      });
+      return res.status(400).json({ success: false, message: "is_active requis" });
     }
-
-    const existingRate = await Rate.findById(id);
-    if (!existingRate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change non trouvé",
-      });
-    }
-
-    const updated = await Rate.toggleActive(id, is_active);
-
+    const updated = await RateService.toggleRateActive(id, is_active, getUserRole(req));
     res.json({
       success: true,
       data: updated,
-      message: `Taux de change ${is_active ? 'activé' : 'désactivé'} avec succès`,
+      message: `Taux ${is_active ? "activé" : "désactivé"}`,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Accès refusé") return res.status(403).json({ success: false, message: error.message });
+    if (error.message === "Taux de change non trouvé") return res.status(404).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// SOFT DELETE (admin seulement)
 const deleteRate = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const existingRate = await Rate.findById(id);
-    if (!existingRate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change non trouvé",
-      });
-    }
-
-    await Rate.softDelete(id);
-
-    res.json({
-      success: true,
-      message: "Taux de change supprimé avec succès",
-    });
+    await RateService.softDeleteRate(id, getUserRole(req));
+    res.json({ success: true, message: "Taux supprimé (soft delete)" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Accès refusé") return res.status(403).json({ success: false, message: error.message });
+    if (error.message === "Taux de change non trouvé") return res.status(404).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// HARD DELETE (admin seulement)
 const hardDeleteRate = async (req, res) => {
   try {
     const { id } = req.params;
-
-    const existingRate = await Rate.findById(id);
-    if (!existingRate) {
-      return res.status(404).json({
-        success: false,
-        message: "Taux de change non trouvé",
-      });
-    }
-
-    await Rate.hardDelete(id);
-
-    res.json({
-      success: true,
-      message: "Taux de change supprimé définitivement",
-    });
+    await RateService.hardDeleteRate(id, getUserRole(req));
+    res.json({ success: true, message: "Taux supprimé définitivement" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Accès refusé") return res.status(403).json({ success: false, message: error.message });
+    if (error.message === "Taux de change non trouvé") return res.status(404).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
-// CONVERT AMOUNT (public)
 const convertCurrency = async (req, res) => {
   try {
     const { from_currency_id, to_currency_id, amount } = req.body;
-
     if (!from_currency_id || !to_currency_id || !amount) {
       return res.status(400).json({
         success: false,
         message: "Devises source, destination et montant sont requis",
       });
     }
-
-    if (amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Le montant doit être supérieur à 0",
-      });
-    }
-
-    const conversion = await Rate.convertAmount(from_currency_id, to_currency_id, amount);
-
+    const conversion = await RateService.convertAmount(from_currency_id, to_currency_id, amount);
     if (!conversion) {
       return res.status(404).json({
         success: false,
-        message: "Taux de change actif non trouvé pour cette paire de devises",
+        message: "Taux de change actif non trouvé pour cette paire",
       });
     }
-
-    res.json({
-      success: true,
-      data: conversion,
-    });
+    res.json({ success: true, data: conversion });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Erreur serveur",
-    });
+    if (error.message === "Le montant doit être supérieur à 0") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
   }
 };
 
 module.exports = {
-  createOrUpdateRate,
+  upsertRate,
   getAllRates,
   getActiveRates,
   getRateById,

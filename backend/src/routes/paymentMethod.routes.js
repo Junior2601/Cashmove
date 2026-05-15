@@ -1,13 +1,14 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
 const controller = require("../controllers/paymentMethod.controller");
 const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
 
-// Routes publiques (accessibles sans authentification)
+// Routes publiques
 router.get("/", controller.getAllPaymentMethods);
 router.get("/:id", controller.getPaymentMethodById);
 router.get("/country/:countryId", controller.getPaymentMethodsByCountry);
 
-// Routes protégées - Admin uniquement
+// Routes protégées - Admin seulement
 router.post("/", verifyToken, authorizeRoles("admin"), controller.createPaymentMethod);
 router.put("/:id", verifyToken, authorizeRoles("admin"), controller.updatePaymentMethod);
 router.patch("/:id/disable", verifyToken, authorizeRoles("admin"), controller.disablePaymentMethod);

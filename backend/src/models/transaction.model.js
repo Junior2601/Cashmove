@@ -82,6 +82,48 @@ const Transaction = {
     return result.rows[0];
   },
 
+  findDetailedById: async (id) => {
+  const query = `
+    SELECT 
+      t.*,
+      c_from.name as from_country_name,
+      c_from.currency_id as from_currency_id,
+      curr_from.code as from_currency_code,
+      curr_from.symbol as from_currency_symbol,
+      c_to.name as to_country_name,
+      c_to.currency_id as to_currency_id,
+      curr_to.code as to_currency_code,
+      curr_to.symbol as to_currency_symbol,
+      sm.name as sender_method_name,
+      rm.name as receiver_method_name,
+      a.name as agent_name,
+      a.email as agent_email,
+      an.number as authorized_number,
+      CASE 
+        WHEN t.processed_by_type = 'agent' THEN ag.name
+        WHEN t.processed_by_type = 'admin' THEN adm.name
+        WHEN t.processed_by_type = 'semi_admin' THEN sa.name
+        ELSE NULL
+      END as processed_by_name
+    FROM transactions t
+    LEFT JOIN countries c_from ON c_from.id = t.from_country_id
+    LEFT JOIN countries c_to ON c_to.id = t.to_country_id
+    LEFT JOIN currencies curr_from ON curr_from.id = c_from.currency_id
+    LEFT JOIN currencies curr_to ON curr_to.id = c_to.currency_id
+    LEFT JOIN payment_methods sm ON sm.id = t.sender_method_id
+    LEFT JOIN payment_methods rm ON rm.id = t.receiver_method_id
+    LEFT JOIN agents a ON a.id = t.assigned_agent_id
+    LEFT JOIN authorized_numbers an ON an.id = t.authorized_number_id
+    LEFT JOIN agents ag ON ag.id = t.processed_by_id AND t.processed_by_type = 'agent'
+    LEFT JOIN admins adm ON adm.id = t.processed_by_id AND t.processed_by_type = 'admin'
+    LEFT JOIN semi_admins sa ON sa.id = t.processed_by_id AND t.processed_by_type = 'semi_admin'
+    WHERE t.id = $1
+  `;
+  
+  const result = await db.query(query, [id]);
+  return result.rows[0];
+},
+
   findByTrackingCode: async (code) => {
     const result = await db.query(
       `SELECT * FROM v_transaction_details WHERE tracking_code = $1`,

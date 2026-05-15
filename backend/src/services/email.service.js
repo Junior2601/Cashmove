@@ -3,7 +3,7 @@ const transporter = require("../config/mailer");
 const sendEmail = async ({ to, subject, html }) => {
   try {
     await transporter.sendMail({
-      from: `"Money Transfer" <${process.env.SMTP_USER}>`,
+      from: `"Move Cash" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,

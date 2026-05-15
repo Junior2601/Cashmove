@@ -1,8 +1,7 @@
 const db = require("../config/db");
 
-const Rate = {
-  // CREATE
-  create: async (data) => {
+const RateModel = {
+  create: async (data, client = null) => {
     const query = `
       INSERT INTO rates (
         from_currency_id,
@@ -14,23 +13,20 @@ const Rate = {
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
-
     const values = [
       data.from_currency_id,
       data.to_currency_id,
       data.rate,
-      data.commission_percent || 0.75,
+      data.commission_percent ?? 0.75,
       data.created_by,
     ];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, values);
+    return rows[0];
   },
 
-  // GET ALL (pour admin - voir tous les taux)
-  findAllForAdmin: async () => {
-    const result = await db.query(`
-      SELECT r.*, 
+  findAllForAdmin: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT r.*,
              fc.code AS from_currency_code,
              fc.name AS from_currency_name,
              tc.code AS to_currency_code,
@@ -43,13 +39,11 @@ const Rate = {
       WHERE r.deleted_at IS NULL
       ORDER BY r.id DESC
     `);
-
-    return result.rows;
+    return rows;
   },
 
-  // GET ACTIVE RATES (public)
-  findAllActive: async () => {
-    const result = await db.query(`
+  findAllActive: async (client = null) => {
+    const { rows } = await (client || db).query(`
       SELECT r.id,
              r.from_currency_id,
              r.to_currency_id,
@@ -65,19 +59,17 @@ const Rate = {
       FROM rates r
       LEFT JOIN currencies fc ON r.from_currency_id = fc.id
       LEFT JOIN currencies tc ON r.to_currency_id = tc.id
-      WHERE r.is_active = true 
+      WHERE r.is_active = true
         AND r.deleted_at IS NULL
         AND fc.is_active = true
         AND tc.is_active = true
       ORDER BY fc.code ASC, tc.code ASC
     `);
-
-    return result.rows;
+    return rows;
   },
 
-  // GET ACTIVE RATE by currency pair
-  findActiveRate: async (from_currency_id, to_currency_id) => {
-    const result = await db.query(
+  findActiveRate: async (from_currency_id, to_currency_id, client = null) => {
+    const { rows } = await (client || db).query(
       `SELECT r.*,
               fc.code AS from_currency_code,
               fc.name AS from_currency_name,
@@ -95,13 +87,11 @@ const Rate = {
          AND tc.is_active = true`,
       [from_currency_id, to_currency_id]
     );
-
-    return result.rows[0];
+    return rows[0];
   },
 
-  // GET ACTIVE RATE by currency codes
-  findActiveRateByCode: async (from_currency_code, to_currency_code) => {
-    const result = await db.query(
+  findActiveRateByCode: async (from_code, to_code, client = null) => {
+    const { rows } = await (client || db).query(
       `SELECT r.*,
               fc.code AS from_currency_code,
               fc.name AS from_currency_name,
@@ -117,15 +107,13 @@ const Rate = {
          AND r.deleted_at IS NULL
          AND fc.is_active = true
          AND tc.is_active = true`,
-      [from_currency_code.toUpperCase(), to_currency_code.toUpperCase()]
+      [from_code.toUpperCase(), to_code.toUpperCase()]
     );
-
-    return result.rows[0];
+    return rows[0];
   },
 
-  // GET RATE by ID
-  findById: async (id) => {
-    const result = await db.query(
+  findById: async (id, client = null) => {
+    const { rows } = await (client || db).query(
       `SELECT r.*,
               fc.code AS from_currency_code,
               fc.name AS from_currency_name,
@@ -139,12 +127,10 @@ const Rate = {
        WHERE r.id = $1 AND r.deleted_at IS NULL`,
       [id]
     );
-
-    return result.rows[0];
+    return rows[0];
   },
 
-  // UPDATE
-  update: async (id, data) => {
+  update: async (id, data, client = null) => {
     const query = `
       UPDATE rates
       SET rate = $1,
@@ -154,50 +140,44 @@ const Rate = {
       WHERE id = $4
       RETURNING *
     `;
-
     const values = [
       data.rate,
       data.commission_percent,
       data.is_active,
       id,
     ];
-
-    const result = await db.query(query, values);
-    return result.rows[0];
+    const { rows } = await (client || db).query(query, values);
+    return rows[0];
   },
 
-  // TOGGLE ACTIVE STATUS
-  toggleActive: async (id, is_active) => {
-    const result = await db.query(
-      `UPDATE rates 
+  toggleActive: async (id, is_active, client = null) => {
+    const { rows } = await (client || db).query(
+      `UPDATE rates
        SET is_active = $1, updated_at = CURRENT_TIMESTAMP
        WHERE id = $2 AND deleted_at IS NULL
        RETURNING *`,
       [is_active, id]
     );
-    return result.rows[0];
+    return rows[0];
   },
 
-  // SOFT DELETE
-  softDelete: async (id) => {
-    const result = await db.query(
-      `UPDATE rates 
+  softDelete: async (id, client = null) => {
+    const { rows } = await (client || db).query(
+      `UPDATE rates
        SET deleted_at = CURRENT_TIMESTAMP, is_active = false, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
        RETURNING *`,
       [id]
     );
-    return result.rows[0];
+    return rows[0];
   },
 
-  // HARD DELETE
-  hardDelete: async (id) => {
-    await db.query(`DELETE FROM rates WHERE id = $1`, [id]);
+  hardDelete: async (id, client = null) => {
+    await (client || db).query(`DELETE FROM rates WHERE id = $1`, [id]);
   },
 
-  // GET RATES BY COUNTRY (via currency)
-  findActiveRatesByCountry: async (country_id) => {
-    const result = await db.query(
+  findActiveRatesByCountry: async (country_id, client = null) => {
+    const { rows } = await (client || db).query(
       `SELECT DISTINCT r.*,
               fc.code AS from_currency_code,
               fc.name AS from_currency_name,
@@ -216,12 +196,11 @@ const Rate = {
        ORDER BY fc.code ASC, tc.code ASC`,
       [country_id]
     );
-    return result.rows;
+    return rows;
   },
 
-  // GET RATES BY CURRENCY
-  findActiveRatesByCurrency: async (currency_id) => {
-    const result = await db.query(
+  findActiveRatesByCurrency: async (currency_id, client = null) => {
+    const { rows } = await (client || db).query(
       `SELECT r.*,
               fc.code AS from_currency_code,
               fc.name AS from_currency_name,
@@ -239,50 +218,24 @@ const Rate = {
        ORDER BY fc.code ASC, tc.code ASC`,
       [currency_id]
     );
-    return result.rows;
+    return rows;
   },
 
-  // CHECK IF RATE EXISTS FOR PAIR
-  existsForPair: async (from_currency_id, to_currency_id, excludeId = null) => {
+  existsForPair: async (from_currency_id, to_currency_id, excludeId = null, client = null) => {
     let query = `
-      SELECT id FROM rates 
-      WHERE from_currency_id = $1 
-        AND to_currency_id = $2 
+      SELECT id FROM rates
+      WHERE from_currency_id = $1
+        AND to_currency_id = $2
         AND deleted_at IS NULL
     `;
     const values = [from_currency_id, to_currency_id];
-    
     if (excludeId) {
       query += ` AND id != $3`;
       values.push(excludeId);
     }
-    
-    const result = await db.query(query, values);
-    return result.rows[0] || null;
+    const { rows } = await (client || db).query(query, values);
+    return rows[0] || null;
   },
-
-  // CONVERT AMOUNT (calcule le montant converti avec commission)
-  convertAmount: async (from_currency_id, to_currency_id, amount) => {
-    const rate = await Rate.findActiveRate(from_currency_id, to_currency_id);
-    
-    if (!rate) {
-      return null;
-    }
-    
-    const convertedAmount = amount * parseFloat(rate.rate);
-    const commission = convertedAmount * (parseFloat(rate.commission_percent) / 100);
-    const totalAmount = convertedAmount + commission;
-    
-    return {
-      original_amount: parseFloat(amount),
-      converted_amount: convertedAmount,
-      commission_amount: commission,
-      total_amount: totalAmount,
-      rate_used: parseFloat(rate.rate),
-      commission_percent: parseFloat(rate.commission_percent),
-      admin_rate: parseFloat(rate.rate) + 0.20
-    };
-  }
 };
 
-module.exports = Rate;
+module.exports = RateModel;

@@ -14,22 +14,23 @@ const rateRoutes = require("./rate.routes");
 const historyRoutes = require("./history.routes");
 const transactionRoutes = require("./transaction.routes");
 const redirectionRoutes = require("./redirection.routes");
-
+const benefitRoutes = require("./benefit.routes");
 
 
 router.use("/admins", adminRoutes);
-router.use("/semi-admins", semiAdminRoutes);
+router.use("/semi_admins", semiAdminRoutes);
 router.use("/currencies", currencyRoutes);
 router.use("/countries", countryRoutes);
 router.use("/auth", authRoutes);
 router.use("/agents", agentRoutes);
-router.use("/payment-methods", paymentRoutes);
+router.use("/payment_methods", paymentRoutes);
 router.use("/balances", balanceRoutes);
-router.use("/authorized-numbers", autorisenumRoutes);
+router.use("/authorized_numbers", autorisenumRoutes);
 router.use("/rates", rateRoutes);
 router.use("/history", historyRoutes);
 router.use("/transactions", transactionRoutes);
 router.use("/redirections", redirectionRoutes);
+router.use("/benefit", benefitRoutes);
 
 // route test
 router.get("/health", (req, res) => {

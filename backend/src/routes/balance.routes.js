@@ -1,19 +1,12 @@
-const router = require("express").Router();
+const express = require("express");
+const router = express.Router();
 const controller = require("../controllers/balance.controller");
 const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
 
-// Routes accessibles selon les rôles
-
-// GET - Toutes les balances (admin: toutes, semi-admin: toutes agents, agent: ses propres)
+// Routes accessibles selon rôles (vérification dans le controller via service)
 router.get("/", verifyToken, controller.getAllBalances);
-
-// GET - Balance par ID (avec vérification des droits)
 router.get("/:id", verifyToken, controller.getBalanceById);
-
-// GET - Balances d'un agent spécifique
 router.get("/agent/:agent_id", verifyToken, controller.getBalancesByAgent);
-
-// GET - Solde total d'un agent
 router.get("/agent/:agent_id/total", verifyToken, controller.getTotalBalanceByAgent);
 
 // Routes admin seulement
@@ -24,7 +17,7 @@ router.patch("/:id/debit", verifyToken, authorizeRoles("admin"), controller.debi
 router.delete("/:id", verifyToken, authorizeRoles("admin"), controller.deleteBalance);
 router.delete("/:id/hard", verifyToken, authorizeRoles("admin"), controller.hardDeleteBalance);
 
-// Route admin seulement pour voir par devise
+// Admin seulement pour voir par devise
 router.get("/currency/:currency_id", verifyToken, authorizeRoles("admin"), controller.getBalancesByCurrency);
 
 module.exports = router;
