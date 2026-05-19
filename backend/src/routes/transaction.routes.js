@@ -1,7 +1,7 @@
 // routes/transaction.routes.js
 const router = require("express").Router();
 const controller = require("../controllers/transaction.controller");
-const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
+const { verifyToken, authorizeRoles, optionalToken } = require("../middlewares/auth.middleware");
 
 // Routes publiques (statiques d'abord)
 router.post("/", controller.createTransaction);
@@ -19,7 +19,7 @@ router.get(
 router.get(
   "/all",
   verifyToken,
-  authorizeRoles("admin", "semi_admin"),
+  authorizeRoles("admin", "semi-admin"),
   controller.getAllTransactions
 );
 
@@ -27,25 +27,25 @@ router.get(
 router.put(
   "/process/:id",
   verifyToken,
-  authorizeRoles("admin", "semi_admin", "agent"),
+  authorizeRoles("admin", "semi-admin", "agent"),
   controller.finalizeTransaction
 );
 
 router.put(
   "/cancel/:id",
   verifyToken,
-  authorizeRoles("admin", "semi_admin", "agent"),
+  authorizeRoles("admin", "semi-admin", "agent"),
   controller.cancelTransaction
 );
 
 router.get(
   "/:id/history",
   verifyToken,
-  authorizeRoles("admin", "semi_admin", "agent"),
+  authorizeRoles("admin", "semi-admin", "agent"),
   controller.getTransactionHistory
 );
 
 // Route dynamique (doit être la dernière)
-router.get('/:transaction_id', controller.getTransactionByIdController);
+router.get('/:transaction_id', optionalToken, controller.getTransactionByIdController);
 
 module.exports = router;

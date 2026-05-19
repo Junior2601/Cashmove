@@ -3,8 +3,6 @@ const router = express.Router();
 const semiAdminController = require("../controllers/semiAdmin.controller");
 const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
 
-// --- Routes publiques ---
-router.post("/login", semiAdminController.loginSemiAdmin);
 
 // --- Routes protégées (admin uniquement) ---
 router.post(
@@ -33,6 +31,13 @@ router.get(
   verifyToken,
   authorizeRoles("admin"),
   semiAdminController.getStatistics
+);
+
+router.delete(
+  "/:id",
+  verifyToken,
+  authorizeRoles("admin"),
+  semiAdminController.deleteSemiAdmin
 );
 
 module.exports = router;

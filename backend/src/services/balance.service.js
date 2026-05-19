@@ -28,7 +28,7 @@ class BalanceService {
     if (userRole === "admin") {
       return await BalanceModel.findAllForAdmin();
     }
-    if (userRole === "semi_admin") {
+    if (userRole === "semi-admin") {
       return await BalanceModel.findAllForSemiAdmin();
     }
     if (userRole === "agent") {
@@ -41,7 +41,7 @@ class BalanceService {
     const balance = await BalanceModel.findById(id);
     if (!balance) throw new Error("Balance non trouvée");
 
-    if (userRole === "admin" || userRole === "semi_admin") {
+    if (userRole === "admin" || userRole === "semi-admin") {
       return balance;
     }
     if (userRole === "agent") {
@@ -57,7 +57,7 @@ class BalanceService {
     const agent = await AgentModel.findById(agentId);
     if (!agent) throw new Error("Agent non trouvé");
 
-    if (userRole === "admin" || userRole === "semi_admin") {
+    if (userRole === "admin" || userRole === "semi-admin") {
       return await BalanceModel.findByAgent(agentId);
     }
     if (userRole === "agent") {
@@ -73,7 +73,7 @@ class BalanceService {
     const agent = await AgentModel.findById(agentId);
     if (!agent) throw new Error("Agent non trouvé");
 
-    if (userRole === "admin" || userRole === "semi_admin") {
+    if (userRole === "admin" || userRole === "semi-admin") {
       const total = await BalanceModel.getTotalBalanceByAgent(agentId);
       return { agent_id: parseInt(agentId), agent_name: agent.name, total_balance: total };
     }

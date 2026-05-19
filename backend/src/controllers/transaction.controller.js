@@ -51,7 +51,7 @@ const getTransactionByIdController = async (req, res) => {
       // Normalement les clients utilisent le tracking_code, pas l'ID
       hasAccess = transaction.status === 'en_attente';
     } 
-    else if (user.role === 'admin' || user.role === 'semi_admin') {
+    else if (user.role === 'admin' || user.role === 'semi-admin') {
       // Admin et semi-admin peuvent voir toutes les transactions
       hasAccess = true;
     } 

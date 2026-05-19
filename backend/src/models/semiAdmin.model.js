@@ -65,6 +65,13 @@ const SemiAdminModel = {
     const { rows } = await db.query(query);
     return rows[0];
   },
+
+  deleteById: async (id) => {
+    const query = `DELETE FROM semi_admins WHERE id = $1 RETURNING id`;
+    const { rows } = await db.query(query, [id]);
+    return rows[0]; // retourne { id } ou undefined si non trouvé
+  },
+
 };
 
 module.exports = SemiAdminModel;

@@ -27,7 +27,7 @@ router.delete("/:id/hard", verifyToken, authorizeRoles("admin"), controller.hard
 router.put("/:id/password", verifyToken, controller.updatePassword);
 
 // Routes admin et semi-admin pour statistiques
-router.get("/country/:country_id", verifyToken, authorizeRoles("admin", "semi_admin"), controller.getAgentsByCountry);
-router.get("/country/:country_id/count", verifyToken, authorizeRoles("admin", "semi_admin"), controller.countAgentsByCountry);
+router.get("/country/:country_id", verifyToken, authorizeRoles("admin", "semi-admin"), controller.getAgentsByCountry);
+router.get("/country/:country_id/count", verifyToken, authorizeRoles("admin", "semi-admin"), controller.countAgentsByCountry);
 
 module.exports = router;

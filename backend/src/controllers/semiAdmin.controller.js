@@ -85,10 +85,26 @@ const getStatistics = async (req, res) => {
   }
 };
 
+// Supprimer définitivement un semi-admin (admin seulement)
+const deleteSemiAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await SemiAdminService.deleteSemiAdmin(id);
+    res.json({ success: true, message: "Semi-admin supprimé avec succès", data: deleted });
+  } catch (error) {
+    if (error.message === "SEMI_ADMIN_NOT_FOUND") {
+      return res.status(404).json({ success: false, message: "Semi-admin non trouvé" });
+    }
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   createSemiAdmin,
   loginSemiAdmin,
   getSemiAdmins,
   updateSemiAdminStatus,
   getStatistics,
+  deleteSemiAdmin,
 };

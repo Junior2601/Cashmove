@@ -13,7 +13,7 @@
 --   7. balances v
 --   8. authorized_numbers v
 --   9. rates v
---  10. transactions
+--  10. transactions v
 --  11. gains
 --  12. redirections
 --  13. history
@@ -140,6 +140,21 @@ CREATE TABLE IF NOT EXISTS balance_transactions (
     type VARCHAR(10) NOT NULL CHECK (type IN ('credit', 'debit')),
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TABLE DES SNAPSHOTS DE BALANCES
+-- Enregistre la valeur totale de toutes les balances (en RUB)
+-- à un instant donné. Alimentée par take_balance_snapshot().
+-- ───────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS balance_snapshots (
+    id              SERIAL PRIMARY KEY,
+    snapshot_type   VARCHAR(20) NOT NULL,          -- 'start_of_day' | 'end_of_day'
+    snapshot_date   DATE        NOT NULL,
+    total_rub       NUMERIC(20, 2) NOT NULL,       -- valeur totale convertie en RUB
+    detail          JSONB DEFAULT NULL,             -- détail par agent et par devise
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+ 
+    UNIQUE (snapshot_type, snapshot_date)
 );
 
 CREATE INDEX idx_balance_transactions_balance_id ON balance_transactions(balance_id);
@@ -530,27 +545,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_authorized_numbers_country_method
     WHERE is_active = true;
 
 
--- ===================================================================
--- DONNÉES DE RÉFÉRENCE INITIALES (optionnel — à adapter)
--- ===================================================================
 
--- Devises
-INSERT INTO currencies (code, name, symbol) VALUES
-    ('RUB', 'Rouble russe',        '₽'),
-    ('XOF', 'Franc CFA UEMOA',     'FCFA'),
-    ('XAF', 'Franc CFA CEMAC',     'FCFA'),
-    ('EUR', 'Euro',                 '€');
-
--- Pays (currency_id à adapter selon l'INSERT au-dessus)
--- RUB = 1, XOF = 2, XAF = 3
-INSERT INTO countries (name, code, phone_prefix, currency_id) VALUES
-    ('Russie',       'RUS', '+7',   1),
-    ('Côte d''Ivoire','CIV', '+225', 2),
-    ('Mali',         'MLI', '+223', 2),
-    ('Bénin',        'BEN', '+229', 2),
-    ('Cameroun',     'CMR', '+237', 3),
-    ('Congo',        'COG', '+242', 3),
-    ('Gabon',        'GAB', '+241', 3);
 -- Optionnel : créer un déclencheur pour mettre à jour updated_at automatiquement
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -564,3 +559,335 @@ CREATE TRIGGER update_semi_admins_updated_at
 BEFORE UPDATE ON semi_admins
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
+
+-- À exécuter UNE FOIS sur ta DB Render (PSQL Command ou pgAdmin)
+-- Cette fonction fait tout en une seule transaction atomique côté PostgreSQL :
+-- vérifications, mise à jour balances, insertion gain, finalisation transaction.
+-- Node.js n'a plus qu'à appeler SELECT finalize_transaction($1, $2, $3)
+
+CREATE OR REPLACE FUNCTION finalize_transaction(
+  p_transaction_id  INT,
+  p_actor_type      TEXT,  -- 'admin', 'semi-admin', 'agent'
+  p_actor_id        INT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tx              transactions%ROWTYPE;
+  v_agent           agents%ROWTYPE;
+  v_from_currency   INT;
+  v_to_currency     INT;
+  v_from_code       TEXT;
+  v_to_code         TEXT;
+  v_from_symbol     TEXT;
+  v_to_symbol       TEXT;
+  v_send_bal        balances%ROWTYPE;
+  v_recv_bal        balances%ROWTYPE;
+  v_old_send        NUMERIC;
+  v_new_send        NUMERIC;
+  v_old_recv        NUMERIC;
+  v_new_recv        NUMERIC;
+  v_gain            NUMERIC;
+BEGIN
+  -- 1. Lock transaction (NOWAIT → erreur immédiate si déjà lockée)
+  SELECT * INTO v_tx
+  FROM transactions
+  WHERE id = p_transaction_id
+  FOR UPDATE NOWAIT;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'TRANSACTION_NOT_FOUND';
+  END IF;
+
+  IF v_tx.status <> 'validee' THEN
+    RAISE EXCEPTION 'TRANSACTION_NOT_VALIDATED: status=%', v_tx.status;
+  END IF;
+
+  -- 2. Vérifier droits agent
+  IF p_actor_type = 'agent' AND v_tx.assigned_agent_id <> p_actor_id THEN
+    RAISE EXCEPTION 'AGENT_NOT_AUTHORIZED';
+  END IF;
+
+  -- 3. Lock agent (ordre strict : transactions → agents → balances)
+  SELECT * INTO v_agent
+  FROM agents
+  WHERE id = v_tx.assigned_agent_id
+  FOR UPDATE NOWAIT;
+
+  IF NOT FOUND OR NOT v_agent.is_active THEN
+    RAISE EXCEPTION 'AGENT_INACTIVE';
+  END IF;
+
+  IF p_actor_type = 'agent' AND NOT v_agent.can_process THEN
+    RAISE EXCEPTION 'AGENT_CANNOT_PROCESS';
+  END IF;
+
+  -- 4. Récupérer currency IDs (lecture simple, tables statiques)
+  SELECT
+    curr_from.id, curr_from.code, curr_from.symbol,
+    curr_to.id,   curr_to.code,   curr_to.symbol
+  INTO
+    v_from_currency, v_from_code, v_from_symbol,
+    v_to_currency,   v_to_code,   v_to_symbol
+  FROM countries c_from
+  JOIN countries c_to       ON c_to.id = v_tx.to_country_id
+  JOIN currencies curr_from ON curr_from.id = c_from.currency_id
+  JOIN currencies curr_to   ON curr_to.id   = c_to.currency_id
+  WHERE c_from.id = v_tx.from_country_id;
+
+  IF v_from_currency IS NULL THEN
+    RAISE EXCEPTION 'CURRENCIES_NOT_FOUND';
+  END IF;
+
+  -- 5. Lock les deux balances en ordre déterministe (currency_id ASC → pas de deadlock)
+  SELECT * INTO v_send_bal
+  FROM balances
+  WHERE agent_id = v_agent.id AND currency_id = v_from_currency
+  FOR UPDATE NOWAIT;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'BALANCE_NOT_FOUND_SEND: currency=%', v_from_code;
+  END IF;
+
+  SELECT * INTO v_recv_bal
+  FROM balances
+  WHERE agent_id = v_agent.id AND currency_id = v_to_currency
+  FOR UPDATE NOWAIT;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'BALANCE_NOT_FOUND_RECV: currency=%', v_to_code;
+  END IF;
+
+  -- 6. Vérifier fonds suffisants
+  v_old_recv := v_recv_bal.amount;
+  IF v_old_recv < v_tx.receive_amount THEN
+    RAISE EXCEPTION 'INSUFFICIENT_FUNDS: available=%, required=%',
+      v_old_recv, v_tx.receive_amount;
+  END IF;
+
+  -- 7. Calculer nouveaux montants
+  v_old_send := v_send_bal.amount;
+  v_new_send := v_old_send + v_tx.send_amount;
+  v_new_recv := v_old_recv - v_tx.receive_amount;
+  v_gain     := ROUND((v_tx.receive_amount * v_tx.commission_applied) / 100, 2);
+
+  -- 8. Mise à jour balances
+  UPDATE balances SET amount = v_new_send, updated_at = NOW()
+  WHERE id = v_send_bal.id;
+
+  UPDATE balances SET amount = v_new_recv, updated_at = NOW()
+  WHERE id = v_recv_bal.id;
+
+  -- 9. Enregistrer gain
+  INSERT INTO gains (transaction_id, agent_id, currency_id, gain_amount, commission_percent_applied, created_at)
+  VALUES (v_tx.id, v_agent.id, v_to_currency, v_gain, v_tx.commission_applied, NOW());
+
+  -- 10. Finaliser transaction
+  UPDATE transactions
+  SET status           = 'effectuee',
+      processed_by_type = p_actor_type,
+      processed_by_id   = p_actor_id,
+      completed_at      = NOW(),
+      updated_at        = NOW()
+  WHERE id = v_tx.id;
+
+  -- 11. Log history
+  INSERT INTO history (action_type, actor_type, actor_id, entity_type, entity_id, description, metadata)
+  VALUES (
+    'transaction_completed',
+    p_actor_type,
+    p_actor_id,
+    'transaction',
+    v_tx.id,
+    'Transaction finalisée par ' || p_actor_type,
+    jsonb_build_object(
+      'transaction_id', v_tx.id,
+      'actor_type',     p_actor_type,
+      'gain',           v_gain,
+      'gain_currency',  v_to_code
+    )
+  );
+
+  -- 12. Retourner le résultat complet
+  RETURN jsonb_build_object(
+    'success', true,
+    'send_currency', jsonb_build_object(
+      'code',     v_from_code,
+      'symbol',   v_from_symbol,
+      'before',   v_old_send,
+      'credited', v_tx.send_amount,
+      'after',    v_new_send
+    ),
+    'receive_currency', jsonb_build_object(
+      'code',     v_to_code,
+      'symbol',   v_to_symbol,
+      'before',   v_old_recv,
+      'debited',  v_tx.receive_amount,
+      'after',    v_new_recv
+    ),
+    'gain', jsonb_build_object(
+      'amount',          v_gain,
+      'currency',        v_to_code,
+      'currency_symbol', v_to_symbol,
+      'commission_rate', v_tx.commission_applied
+    )
+  );
+
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Transaction ou ressource déjà en cours de traitement, réessayez';
+END;
+$$;
+
+-- À exécuter UNE FOIS sur ta DB Render
+
+CREATE OR REPLACE FUNCTION validate_transaction_by_client(
+  p_transaction_id INT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tx transactions%ROWTYPE;
+BEGIN
+  -- 1. Lock + vérification en une seule requête (NOWAIT → erreur immédiate)
+  SELECT * INTO v_tx
+  FROM transactions
+  WHERE id = p_transaction_id
+    AND status = 'en_attente'
+    AND expires_at > NOW()
+  FOR UPDATE NOWAIT;
+
+  IF NOT FOUND THEN
+    -- Distinguer "expirée" de "introuvable" pour un message précis
+    IF EXISTS (SELECT 1 FROM transactions WHERE id = p_transaction_id) THEN
+      RAISE EXCEPTION 'TRANSACTION_EXPIRED: Transaction expirée ou déjà validée';
+    ELSE
+      RAISE EXCEPTION 'TRANSACTION_NOT_FOUND: Transaction introuvable';
+    END IF;
+  END IF;
+
+  -- 2. Valider
+  UPDATE transactions
+  SET client_validated = true,
+      status           = 'validee',
+      updated_at       = NOW()
+  WHERE id = v_tx.id
+  RETURNING * INTO v_tx;
+
+  -- 3. Logger dans history
+  INSERT INTO history (
+    action_type, actor_type, actor_id,
+    entity_type, entity_id,
+    description, metadata
+  )
+  VALUES (
+    'transaction_client_validated',
+    'client', NULL,
+    'transaction', v_tx.id,
+    'Transaction validée par le client',
+    jsonb_build_object('transaction_id', v_tx.id)
+  );
+
+  -- 4. Retourner la transaction mise à jour
+  RETURN jsonb_build_object(
+    'id',               v_tx.id,
+    'tracking_code',    v_tx.tracking_code,
+    'status',           v_tx.status,
+    'client_validated', v_tx.client_validated,
+    'send_amount',      v_tx.send_amount,
+    'receive_amount',   v_tx.receive_amount,
+    'updated_at',       v_tx.updated_at
+  );
+
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Transaction en cours de traitement, réessayez dans quelques secondes';
+END;
+$$;
+
+-- ───────────────────────────────────────────────────────────────────
+-- 2. FONCTION : prendre un snapshot des balances
+-- Convertit toutes les balances en RUB via le taux interne (rate + 0.20).
+-- Les balances déjà en RUB sont prises telles quelles.
+-- ───────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION take_balance_snapshot(
+    p_type  VARCHAR  -- 'start_of_day' ou 'end_of_day'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_rub_currency_id   INT;
+    v_total_rub         NUMERIC := 0;
+    v_detail            JSONB   := '[]'::JSONB;
+    v_row               RECORD;
+    v_rate_to_rub       NUMERIC;
+    v_amount_in_rub     NUMERIC;
+    v_snapshot_date     DATE := CURRENT_DATE;
+BEGIN
+    -- Récupérer l'ID de la devise RUB
+    SELECT id INTO v_rub_currency_id FROM currencies WHERE code = 'RUB';
+    IF v_rub_currency_id IS NULL THEN
+        RAISE EXCEPTION 'CURRENCY_RUB_NOT_FOUND';
+    END IF;
+ 
+    -- Parcourir toutes les balances actives (agents non supprimés)
+    FOR v_row IN
+        SELECT
+            b.id            AS balance_id,
+            b.agent_id,
+            a.name          AS agent_name,
+            b.currency_id,
+            c.code          AS currency_code,
+            b.amount
+        FROM balances b
+        JOIN agents     a ON a.id = b.agent_id  AND a.deleted_at IS NULL
+        JOIN currencies c ON c.id = b.currency_id
+        WHERE b.amount > 0
+    LOOP
+        IF v_row.currency_id = v_rub_currency_id THEN
+            -- Balance déjà en RUB : pas de conversion
+            v_amount_in_rub := v_row.amount;
+        ELSE
+            -- Trouver le taux interne : devises étrangères → RUB
+            -- Le taux dans la table est "1 RUB = X devise_étrangère"
+            -- Donc pour convertir devise → RUB : montant / (rate + 0.20)
+            SELECT rate INTO v_rate_to_rub
+            FROM rates
+            WHERE from_currency_id = v_rub_currency_id
+              AND to_currency_id   = v_row.currency_id
+              AND is_active = true
+            LIMIT 1;
+ 
+            IF v_rate_to_rub IS NULL THEN
+                -- Pas de taux connu → on ignore cette balance (log dans detail)
+                v_amount_in_rub := 0;
+                v_detail := v_detail || jsonb_build_object(
+                    'agent_id',       v_row.agent_id,
+                    'agent_name',     v_row.agent_name,
+                    'currency',       v_row.currency_code,
+                    'amount',         v_row.amount,
+                    'amount_rub',     0,
+                    'warning',        'Taux introuvable, balance ignorée'
+                );
+                CONTINUE;
+            END IF;
+ 
+            -- Taux interne = taux client + 0.20
+            -- 1 RUB = (rate + 0.20) devise_étrangère
+            -- donc 1 devise_étrangère = 1 / (rate + 0.20) RUB
+            v_amount_in_rub := ROUND(v_row.amount / (v_rate_to_rub + 0.20), 2);
+        END IF;
+ 
+        v_total_rub := v_total_rub + v_amount_in_rub;
+ 
+        v_detail := v_detail || jsonb_build_object(
+            'agent_id',    v_row.agent_id,
+            'agent_name',  v_row.agent_name,
+            'currency',    v_row.currency_code,
+            'amount',      v_row.amount,
+            'amount_rub',  v_amount_in_rub
+        );
+    END LOOP;

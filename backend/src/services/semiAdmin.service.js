@@ -35,9 +35,9 @@ class SemiAdminService {
       throw new Error("INVALID_CREDENTIALS");
     }
 
-    // Génération du token JWT (rôle "semi_admin")
+    // Génération du token JWT (rôle "semi-admin")
     const token = jwt.sign(
-      { id: semiAdmin.id, role: "semi_admin" },
+      { id: semiAdmin.id, role: "semi-admin" },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -61,6 +61,14 @@ class SemiAdminService {
   // Statistiques : total, actifs, inactifs
   static async getStatistics() {
     return await SemiAdminModel.getStats();
+  }
+
+  static async deleteSemiAdmin(id) {
+    const deleted = await SemiAdminModel.deleteById(id);
+    if (!deleted) {
+      throw new Error("SEMI_ADMIN_NOT_FOUND");
+    }
+    return deleted;
   }
 }
 

@@ -67,7 +67,7 @@ class AgentService {
     if (role === "admin") {
       return await AgentModel.findAllForAdmin();
     }
-    if (role === "semi_admin") {
+    if (role === "semi-admin") {
       return await AgentModel.findAllForSemiAdmin();
     }
     if (role === "agent") {
@@ -87,7 +87,7 @@ class AgentService {
     if (role === "admin") {
       return agent;
     }
-    if (role === "semi_admin") {
+    if (role === "semi-admin") {
       if (!agent.is_active) {
         throw new Error("Cet agent n'est pas accessible");
       }
@@ -269,7 +269,7 @@ class AgentService {
 
   // GET AGENTS BY COUNTRY (admin et semi-admin)
   static async getAgentsByCountry(country_id, currentUserRole) {
-    if (currentUserRole !== "admin" && currentUserRole !== "semi_admin") {
+    if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
       throw new Error("Non autorisé");
     }
     const country = await CountryModel.findById(country_id);
@@ -282,7 +282,7 @@ class AgentService {
 
   // COUNT AGENTS BY COUNTRY (admin et semi-admin)
   static async countAgentsByCountry(country_id, currentUserRole) {
-    if (currentUserRole !== "admin" && currentUserRole !== "semi_admin") {
+    if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
       throw new Error("Non autorisé");
     }
     const country = await CountryModel.findById(country_id);
