@@ -7,7 +7,8 @@ const { startExpirationJob } = require('./jobs/expireTransactions');
 const app = express();
 
 // Démarrer le cron job pour l'expiration des transactions
-startExpirationJob(2);
+startExpirationJob();
+require('./utils/profitScheduler');
 
 // Middlewares globaux
 app.use(cors());

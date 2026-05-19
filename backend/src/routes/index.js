@@ -14,7 +14,8 @@ const rateRoutes = require("./rate.routes");
 const historyRoutes = require("./history.routes");
 const transactionRoutes = require("./transaction.routes");
 const redirectionRoutes = require("./redirection.routes");
-const benefitRoutes = require("./benefit.routes");
+const profitRoutes = require("./profit.routes");
+// const benefitRoutes = require("./benefit.routes");
 
 
 router.use("/admins", adminRoutes);
@@ -30,7 +31,8 @@ router.use("/rates", rateRoutes);
 router.use("/history", historyRoutes);
 router.use("/transactions", transactionRoutes);
 router.use("/redirections", redirectionRoutes);
-router.use("/benefit", benefitRoutes);
+router.use("/profit", profitRoutes);
+// router.use("/benefit", benefitRoutes);
 
 // route test
 router.get("/health", (req, res) => {
