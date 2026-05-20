@@ -24,7 +24,7 @@ router.use("/currencies", currencyRoutes);
 router.use("/countries", countryRoutes);
 router.use("/auth", authRoutes);
 router.use("/agents", agentRoutes);
-router.use("/payment_methods", paymentRoutes);
+router.use("/payment-methods", paymentRoutes);
 router.use("/balances", balanceRoutes);
 router.use("/authorized_numbers", autorisenumRoutes);
 router.use("/rates", rateRoutes);

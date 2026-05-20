@@ -3,10 +3,10 @@ const router = express.Router();
 const controller = require("../controllers/paymentMethod.controller");
 const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
 
-// Routes publiques
+// Routes publiques — statiques AVANT dynamiques
 router.get("/", controller.getAllPaymentMethods);
+router.get("/country/:countryId", controller.getPaymentMethodsByCountry); // ← monté avant /:id
 router.get("/:id", controller.getPaymentMethodById);
-router.get("/country/:countryId", controller.getPaymentMethodsByCountry);
 
 // Routes protégées - Admin seulement
 router.post("/", verifyToken, authorizeRoles("admin"), controller.createPaymentMethod);

@@ -91,6 +91,7 @@ const Transaction = {
     const query = `
       SELECT 
         t.*,
+        t.client_validated,
         c_from.name as from_country_name,
         c_from.currency_id as from_currency_id,
         curr_from.code as from_currency_code,
