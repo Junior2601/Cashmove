@@ -138,6 +138,20 @@ const countAgentsByCountry = async (req, res) => {
   }
 };
 
+const getGlobalAgentStats = async (req, res) => {
+  try {
+    const stats = await AgentService.getGlobalAgentStats(req.user);
+    res.json({
+      success: true,
+      data: stats,
+      message: 'Statistiques récupérées avec succès'
+    });
+  } catch (error) {
+    const status = error.message.includes('Non autorisé') ? 403 : 500;
+    res.status(status).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createAgent,
   getAgents,
@@ -151,4 +165,5 @@ module.exports = {
   hardDeleteAgent,
   getAgentsByCountry,
   countAgentsByCountry,
+  getGlobalAgentStats,
 };

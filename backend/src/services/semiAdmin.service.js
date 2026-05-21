@@ -70,6 +70,33 @@ class SemiAdminService {
     }
     return deleted;
   }
+
+  static async updateSemiAdmin(id, { name, email, password }) {
+    // Vérifier si l'email est déjà utilisé par un autre compte
+    if (email) {
+      const existing = await SemiAdminModel.findByEmail(email);
+      if (existing && existing.id !== parseInt(id)) {
+        throw new Error("EMAIL_ALREADY_USED");
+      }
+    }
+    
+    let hashedPassword = undefined;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
+    }
+    
+    const updated = await SemiAdminModel.updateById(id, {
+      name,
+      email,
+      password: hashedPassword,
+    });
+    
+    if (!updated) {
+      throw new Error("SEMI_ADMIN_NOT_FOUND");
+    }
+    return updated;
+  }
+  
 }
 
 module.exports = SemiAdminService;

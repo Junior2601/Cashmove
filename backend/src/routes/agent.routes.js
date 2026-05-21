@@ -8,6 +8,7 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 
 // GET - Tous les agents (admin: tous, semi-admin: actifs, agent: autres agents)
 router.get("/", verifyToken, controller.getAgents);
+router.get("/stats", verifyToken, authorizeRoles("admin", "semi-admin"), controller.getGlobalAgentStats);
 
 // GET - Agent par ID (avec vérification des droits)
 router.get("/:id", verifyToken, controller.getAgentById);

@@ -366,6 +366,90 @@ const Transaction = {
       client.release();
     }
   },
+
+  getStats: async () => {
+    const query = `
+      SELECT 
+        COUNT(*) as total_transactions,
+        COALESCE(SUM(send_amount), 0) as total_send_amount,
+        COALESCE(SUM(receive_amount), 0) as total_receive_amount,
+        COUNT(*) FILTER (WHERE status = 'en_attente') as pending_count,
+        COUNT(*) FILTER (WHERE status = 'validee') as validated_count,
+        COUNT(*) FILTER (WHERE status = 'effectuee') as completed_count,
+        COUNT(*) FILTER (WHERE status = 'annulee') as cancelled_count,
+        COUNT(*) FILTER (WHERE status = 'expiree') as expired_count
+      FROM transactions
+    `;
+    const result = await db.query(query);
+    return result.rows[0];
+  },
+
+  getChartData: async (period, fromDate, toDate) => {
+    let groupByExpr, intervalUnit;
+    
+    switch (period) {
+      case 'day':
+        groupByExpr = "to_char(created_at, 'YYYY-MM-DD HH24:00:00')";
+        intervalUnit = 'hour';
+        break;
+      case 'week':
+        groupByExpr = "to_char(created_at, 'YYYY-MM-DD')";
+        intervalUnit = 'day';
+        break;
+      case 'month':
+        groupByExpr = "to_char(created_at, 'YYYY-MM-DD')";
+        intervalUnit = 'day';
+        break;
+      default:
+        groupByExpr = "to_char(created_at, 'YYYY-MM-DD')";
+        intervalUnit = 'day';
+    }
+
+    // Generate series of timestamps from fromDate to toDate
+    const query = `
+      WITH date_range AS (
+        SELECT generate_series(
+          $1::timestamp,
+          $2::timestamp,
+          '1 ${intervalUnit}'::interval
+        ) as point
+      )
+      SELECT 
+        to_char(dr.point, 'YYYY-MM-DD HH24:MI:SS') as period,
+        COALESCE(COUNT(t.id), 0) as count,
+        COALESCE(SUM(t.send_amount), 0) as total_amount
+      FROM date_range dr
+      LEFT JOIN transactions t ON t.created_at >= dr.point
+                              AND t.created_at < dr.point + ('1 ${intervalUnit}'::interval)
+      GROUP BY dr.point
+      ORDER BY dr.point
+    `;
+    
+    const result = await db.query(query, [fromDate, toDate]);
+    return result.rows;
+  },
+
+  getRecentTransactions: async (limit = 5) => {
+    const query = `
+      SELECT * FROM v_transaction_details
+      ORDER BY created_at DESC
+      LIMIT $1
+    `;
+    const result = await db.query(query, [limit]);
+    return result.rows;
+  },
+
+  getTransactionsForExport: async (fromDate, toDate) => {
+    const query = `
+      SELECT * FROM v_transaction_details
+      WHERE created_at BETWEEN $1 AND $2
+      ORDER BY created_at DESC
+    `;
+    const result = await db.query(query, [fromDate, toDate]);
+    return result.rows;
+  },
+
+  
 };
 
 module.exports = Transaction;

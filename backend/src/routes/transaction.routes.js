@@ -23,6 +23,34 @@ router.get(
   controller.getAllTransactions
 );
 
+router.get(
+  "/stats",
+  verifyToken,
+  authorizeRoles("admin", "semi-admin"),
+  controller.getDashboardStats
+);
+
+router.get(
+  "/chart",
+  verifyToken,
+  authorizeRoles("admin", "semi-admin"),
+  controller.getChartData
+);
+
+router.get(
+  "/recent",
+  verifyToken,
+  authorizeRoles("admin", "semi-admin"),
+  controller.getRecentTransactions
+);
+
+router.get(
+  "/export",
+  verifyToken,
+  authorizeRoles("admin", "semi-admin"),
+  controller.exportTransactionsToCsv
+);
+
 // Routes protégées avec paramètre id
 router.put(
   "/process/:id",

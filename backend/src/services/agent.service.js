@@ -296,6 +296,14 @@ class AgentService {
       active_agents_count: count,
     };
   }
+
+  static async getGlobalAgentStats(currentUser) {
+    const { role } = currentUser;
+    if (role !== 'admin' && role !== 'semi-admin') {
+      throw new Error('Non autorisé : seuls les administrateurs et semi-administrateurs peuvent consulter ces statistiques');
+    }
+    return await AgentModel.getGlobalStats();
+  }
 }
 
 module.exports = AgentService;

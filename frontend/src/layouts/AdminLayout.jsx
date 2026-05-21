@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogOut, Menu, X, ChevronRight, Home, Users, UserCog, Globe, CircleDollarSign, TrendingUp, Wallet, HandCoins, CreditCard, Phone, History, FileText } from 'lucide-react';
+import { LogOut, Menu, X, ChevronRight, Home, Users, UserCog, Globe, CircleDollarSign, TrendingUp, Wallet, Scale, HandCoins, CreditCard, Phone, History, FileText } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 
@@ -16,6 +16,7 @@ export default function AdminLayout() {
     { path: '/admin/currencies',   label: 'Devises',           icon: CircleDollarSign  },
     { path: '/admin/rates',        label: 'Taux',              icon: TrendingUp        },
     { path: '/admin/balances',     label: 'Balances',          icon: Wallet            },
+    { path: '/admin/profits',      label: 'Profits',           icon: Scale             },
     { path: '/admin/agent-gains',  label: 'Gains',             icon: HandCoins         },
     { path: '/admin/payements',    label: 'Moyens Payements',  icon: CreditCard        },
     { path: '/admin/numbers',      label: 'Numéros',           icon: Phone             },

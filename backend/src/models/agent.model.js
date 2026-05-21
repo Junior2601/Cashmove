@@ -215,6 +215,23 @@ const AgentModel = {
     );
     return result.rows;
   },
+
+  getGlobalStats: async (client = null) => {
+    const dbClient = client || db;
+    const result = await dbClient.query(`
+      SELECT 
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_active = true) AS active,
+        COUNT(*) FILTER (WHERE is_active = false) AS inactive
+      FROM agents
+      WHERE deleted_at IS NULL
+    `);
+    return {
+      total: parseInt(result.rows[0].total, 10),
+      active: parseInt(result.rows[0].active, 10),
+      inactive: parseInt(result.rows[0].inactive, 10)
+    };
+  },
 };
 
 module.exports = AgentModel;

@@ -100,6 +100,25 @@ const deleteSemiAdmin = async (req, res) => {
   }
 };
 
+const updateSemiAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, email, password } = req.body;
+    
+    const updated = await SemiAdminService.updateSemiAdmin(id, { name, email, password });
+    res.json({ success: true, data: updated });
+  } catch (error) {
+    if (error.message === "SEMI_ADMIN_NOT_FOUND") {
+      return res.status(404).json({ success: false, message: "Semi-admin non trouvé" });
+    }
+    if (error.message === "EMAIL_ALREADY_USED") {
+      return res.status(400).json({ success: false, message: "Email déjà utilisé par un autre compte" });
+    }
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   createSemiAdmin,
   loginSemiAdmin,
@@ -107,4 +126,5 @@ module.exports = {
   updateSemiAdminStatus,
   getStatistics,
   deleteSemiAdmin,
+  updateSemiAdmin,
 };

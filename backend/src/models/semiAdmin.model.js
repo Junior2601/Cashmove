@@ -72,6 +72,39 @@ const SemiAdminModel = {
     return rows[0]; // retourne { id } ou undefined si non trouvé
   },
 
+  updateById: async (id, { name, email, password }) => {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    
+    if (name !== undefined) {
+      fields.push(`name = $${idx++}`);
+      values.push(name);
+    }
+    if (email !== undefined) {
+      fields.push(`email = $${idx++}`);
+      values.push(email);
+    }
+    if (password !== undefined) {
+      fields.push(`password = $${idx++}`);
+      values.push(password);
+    }
+    
+    if (fields.length === 0) return null;
+    
+    fields.push(`updated_at = NOW()`);
+    values.push(id);
+    
+    const query = `
+      UPDATE semi_admins
+      SET ${fields.join(', ')}
+      WHERE id = $${idx}
+      RETURNING id, name, email, is_active, created_at, updated_at
+    `;
+    const { rows } = await db.query(query, values);
+    return rows[0];
+  },
+
 };
 
 module.exports = SemiAdminModel;

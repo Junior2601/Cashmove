@@ -16,7 +16,9 @@ import Unauthorized      from "../pages/publics/Unauthorized";
 
 // Pages Admin
 import AdminDashboard from "../pages/admin/Dashboard";
-// import AdminAgents  from "../pages/admin/Agents"; ← décommente au fur et à mesure
+import AdminAgents  from "../pages/admin/Agents";
+import AdminSemiAdmins  from "../pages/admin/SemiAdmins";
+import AdminCountries  from "../pages/admin/Countries";
 
 // Pages Semi-Admin
 import SemiAdminDashboard from "../pages/semi-admin/Dashboard";
@@ -46,8 +48,9 @@ export default function AppRoutes() {
         >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboard />} />
-          {/* <Route path="agents"      element={<AdminAgents />} /> */}
-          {/* <Route path="semi-admins" element={<AdminSemiAdmins />} /> */}
+          <Route path="agents"      element={<AdminAgents />} />
+          <Route path="semi-admins" element={<AdminSemiAdmins />} />
+          <Route path="countries" element={<AdminCountries />} />
         </Route>
 
         {/* ──────── SEMI-ADMIN ──────── */}

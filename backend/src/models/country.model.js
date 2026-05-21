@@ -134,6 +134,21 @@ const CountryModel = {
     );
     return rows[0];
   },
+
+  getStats: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_active = true) AS active,
+        COUNT(*) FILTER (WHERE is_active = false) AS inactive
+      FROM countries
+    `);
+    return {
+      total: parseInt(rows[0].total),
+      active: parseInt(rows[0].active),
+      inactive: parseInt(rows[0].inactive),
+    };
+  },
 };
 
 module.exports = CountryModel;

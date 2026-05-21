@@ -37,14 +37,46 @@ const createCountry = async (req, res) => {
   }
 };
 
-const getCountries = async (req, res) => {
+// const getCountries = async (req, res) => {
+//   try {
+//     const role = getUserRole(req);
+//     const countries = await CountryService.getCountries(role);
+//     res.json({
+//       success: true,
+//       data: countries,
+//       message: role === "admin" ? "Tous les pays" : "Pays actifs uniquement",
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ success: false, message: "Erreur serveur" });
+//   }
+// };
+
+// ... autres fonctions (createCountry, getCountryById, updateCountry, etc.) inchangées ...
+
+// Nouvelle : pour les utilisateurs normaux (pays actifs uniquement)
+const getActiveCountries = async (req, res) => {
   try {
-    const role = getUserRole(req);
-    const countries = await CountryService.getCountries(role);
+    const countries = await CountryService.getActiveCountries();
     res.json({
       success: true,
       data: countries,
-      message: role === "admin" ? "Tous les pays" : "Pays actifs uniquement",
+      message: "Pays actifs uniquement",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
+// Nouvelle : pour l'admin (tous les pays)
+const getAllCountries = async (req, res) => {
+  try {
+    const countries = await CountryService.getAllCountriesForAdmin();
+    res.json({
+      success: true,
+      data: countries,
+      message: "Tous les pays (actifs et inactifs)",
     });
   } catch (error) {
     console.error(error);
@@ -156,12 +188,33 @@ const deleteCountry = async (req, res) => {
   }
 };
 
+const getCountryStats = async (req, res) => {
+  try {
+    const role = getUserRole(req);
+    const stats = await CountryService.getCountryStats(role);
+    res.json({
+      success: true,
+      data: stats,
+      message: "Statistiques des pays",
+    });
+  } catch (error) {
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   createCountry,
-  getCountries,
+  // getCountries,
+  getActiveCountries,
+  getAllCountries,
   getCountryById,
   updateCountry,
   disableCountry,
   reactivateCountry,
   deleteCountry,
+  getCountryStats,
 };

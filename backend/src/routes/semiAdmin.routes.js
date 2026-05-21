@@ -40,4 +40,11 @@ router.delete(
   semiAdminController.deleteSemiAdmin
 );
 
+router.put(
+  "/:id",
+  verifyToken,
+  authorizeRoles("admin"),
+  semiAdminController.updateSemiAdmin
+);
+
 module.exports = router;

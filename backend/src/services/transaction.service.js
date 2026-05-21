@@ -156,8 +156,49 @@ const cancelTransactionService = async (transaction_id, actor, reason) => {
   return await Transaction.cancel(transaction_id, actor, reason);
 };
 
+const getDashboardStats = async () => {
+  return await Transaction.getStats();
+};
+
+const getChartData = async (period, from, to) => {
+  // Default period to 'week' if not provided
+  const validPeriods = ['day', 'week', 'month'];
+  let normalizedPeriod = period ? period.toLowerCase().trim() : 'week';
+  
+  if (!validPeriods.includes(normalizedPeriod)) {
+    throw new Error('Period must be day, week, or month');
+  }
+
+  // Date range: if not provided, use last 30 days
+  const toDate = to ? new Date(to) : new Date();
+  const fromDate = from ? new Date(from) : new Date();
+  if (!from) fromDate.setDate(toDate.getDate() - 30);
+
+  // Prevent timezone shifts by resetting to UTC midnight
+  const start = new Date(Date.UTC(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate()));
+  const end = new Date(Date.UTC(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59));
+
+  return await Transaction.getChartData(normalizedPeriod, start, end);
+};
+
+const getRecentTransactions = async (limit = 5) => {
+  const lim = parseInt(limit, 10);
+  if (isNaN(lim) || lim < 1) throw new Error('Invalid limit');
+  return await Transaction.getRecentTransactions(lim);
+};
+
+const exportTransactions = async (fromDate, toDate) => {
+  if (!fromDate || !toDate) throw new Error('fromDate and toDate are required');
+  const rows = await Transaction.getTransactionsForExport(fromDate, toDate);
+  return rows;
+};
+
 module.exports = {
   createTransactionService,
   finalizeTransactionService,
   cancelTransactionService,
+  getDashboardStats,
+  getChartData,
+  getRecentTransactions,
+  exportTransactions
 };

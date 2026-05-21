@@ -235,6 +235,71 @@ const getTransactionHistory = async (req, res) => {
   }
 };
 
+const getDashboardStats = async (req, res) => {
+  try {
+    const stats = await service.getDashboardStats();
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getChartData = async (req, res) => {
+  try {
+    const { period, from, to } = req.query;
+    const data = await service.getChartData(period, from, to);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+const getRecentTransactions = async (req, res) => {
+  try {
+    const { limit = 5 } = req.query;
+    const transactions = await service.getRecentTransactions(limit);
+    res.json({ success: true, data: transactions });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+const exportTransactionsToCsv = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) {
+      return res.status(400).json({ success: false, message: 'from and to dates are required' });
+    }
+    const rows = await service.exportTransactions(from, to);
+    
+    // Convert to CSV
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No data for export' });
+    }
+    
+    const fields = Object.keys(rows[0]);
+    const csvRows = [];
+    csvRows.push(fields.join(','));
+    for (const row of rows) {
+      const values = fields.map(field => {
+        let val = row[field];
+        if (val === null || val === undefined) val = '';
+        if (typeof val === 'string') val = `"${val.replace(/"/g, '""')}"`;
+        if (val instanceof Date) val = val.toISOString();
+        return val;
+      });
+      csvRows.push(values.join(','));
+    }
+    
+    const csvData = csvRows.join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=transactions_${from}_to_${to}.csv`);
+    res.send(csvData);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createTransaction,
   getTransactionByIdController,
@@ -244,5 +309,10 @@ module.exports = {
   cancelTransaction,
   getMyTransactions,
   getAllTransactions,
-  getTransactionHistory
+  getTransactionHistory,
+  getDashboardStats,
+  getChartData,
+  getRecentTransactions,
+  exportTransactionsToCsv
+
 };

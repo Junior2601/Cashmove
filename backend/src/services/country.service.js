@@ -27,6 +27,14 @@ class CountryService {
     return await CountryModel.findAllActive();
   }
 
+  static async getActiveCountries() {
+    return await CountryModel.findAllActive();
+  }
+
+  static async getAllCountriesForAdmin() {
+    return await CountryModel.findAllForAdmin();
+  }
+
   static async getCountryById(id, userRole) {
     const country = await CountryModel.findById(id);
     if (!country) throw new Error("Pays non trouvé");
@@ -139,6 +147,11 @@ class CountryService {
     } finally {
       client.release();
     }
+  }
+
+  static async getCountryStats(userRole) {
+    if (userRole !== "admin") throw new Error("Accès refusé");
+    return await CountryModel.getStats();
   }
 }
 
