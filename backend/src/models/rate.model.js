@@ -236,6 +236,18 @@ const RateModel = {
     const { rows } = await (client || db).query(query, values);
     return rows[0] || null;
   },
+
+  getStats: async (client = null) => {
+    const { rows } = await (client || db).query(`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_active = true) AS active,
+        COUNT(*) FILTER (WHERE is_active = false) AS inactive
+      FROM rates
+      WHERE deleted_at IS NULL
+    `);
+    return rows[0];
+  },
 };
 
 module.exports = RateModel;

@@ -51,6 +51,27 @@ router.get(
   controller.exportTransactionsToCsv
 );
 
+router.get(
+  "/semi-admin/stats/counts",
+  verifyToken,
+  authorizeRoles("semi-admin"),
+  controller.getSemiAdminTransactionCounts
+);
+
+router.get(
+  "/semi-admin/recent",
+  verifyToken,
+  authorizeRoles("semi-admin"),
+  controller.getSemiAdminRecentTransactions
+);
+
+router.get(
+  "/semi-admin/share",
+  verifyToken,
+  authorizeRoles("semi-admin"),
+  controller.getSemiAdminShare
+);
+
 // Routes protégées avec paramètre id
 router.put(
   "/process/:id",

@@ -151,6 +151,20 @@ const deleteCurrency = async (req, res) => {
   }
 };
 
+const getCurrencyStats = async (req, res) => {
+  try {
+    const role = getUserRole(req);
+    const stats = await CurrencyService.getStatistics(role);
+    res.json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   createCurrency,
   getCurrencies,
@@ -159,4 +173,5 @@ module.exports = {
   disableCurrency,
   reactivateCurrency,
   deleteCurrency,
+  getCurrencyStats,
 };

@@ -304,6 +304,36 @@ class AgentService {
     }
     return await AgentModel.getGlobalStats();
   }
+
+  // Admin : tous les agents (avec inactifs)
+  static async getAllAgentsForAdmin(currentUserRole) {
+    if (currentUserRole !== "admin") {
+      throw new Error("Non autorisé");
+    }
+    return await AgentModel.findAllForAdmin(); // déjà existante
+  }
+
+  // Admin ou semi-admin : agents actifs uniquement
+  static async getActiveAgentsForStaff(currentUserRole) {
+    if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
+      throw new Error("Non autorisé");
+    }
+    return await AgentModel.findAllForSemiAdmin(); // retourne déjà les actifs
+  }
+
+  // Public : agents actifs (champs limités)
+  static async getActiveAgentsPublic() {
+    const result = await db.query(`
+      SELECT a.id, a.name, a.country_id, a.can_process,
+            c.name as country_name, c.code as country_code
+      FROM agents a
+      LEFT JOIN countries c ON a.country_id = c.id
+      WHERE a.deleted_at IS NULL AND a.is_active = true
+      ORDER BY a.name ASC
+    `);
+    return result.rows;
+  }
+
 }
 
 module.exports = AgentService;

@@ -83,6 +83,18 @@ const CurrencyModel = {
     );
     return rows[0];
   },
+
+  getStatistics: async (client = null) => {
+    const query = `
+      SELECT 
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE is_active = true) AS active,
+        COUNT(*) FILTER (WHERE is_active = false) AS inactive
+      FROM currencies
+    `;
+    const { rows } = await (client || db).query(query);
+    return rows[0]; // { total: "5", active: "3", inactive: "2" }
+  },
 };
 
 module.exports = CurrencyModel;

@@ -138,64 +138,108 @@ const Transaction = {
     return result.rows[0];
   },
 
-  findByAgentId: async (agentId, filters = {}) => {
-    let query = `
-      SELECT * FROM v_transaction_details 
-      WHERE agent_id = $1
-    `;
-    const values = [agentId];
-    let paramIndex = 2;
+  findByAgentId: async (agentId, filters = {}, page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  let countQuery = `
+    SELECT COUNT(*) as total
+    FROM v_transaction_details 
+    WHERE agent_id = $1
+  `;
+  let dataQuery = `
+    SELECT * FROM v_transaction_details 
+    WHERE agent_id = $1
+  `;
+  const values = [agentId];
+  let paramIndex = 2;
 
-    if (filters.status) {
-      query += ` AND status = $${paramIndex++}`;
-      values.push(filters.status);
-    }
+  if (filters.status) {
+    countQuery += ` AND status = $${paramIndex}`;
+    dataQuery += ` AND status = $${paramIndex}`;
+    values.push(filters.status);
+    paramIndex++;
+  }
 
-    if (filters.from_date) {
-      query += ` AND created_at >= $${paramIndex++}`;
-      values.push(filters.from_date);
-    }
+  if (filters.from_date) {
+    countQuery += ` AND created_at >= $${paramIndex}`;
+    dataQuery += ` AND created_at >= $${paramIndex}`;
+    values.push(filters.from_date);
+    paramIndex++;
+  }
 
-    if (filters.to_date) {
-      query += ` AND created_at <= $${paramIndex++}`;
-      values.push(filters.to_date);
-    }
+  if (filters.to_date) {
+    countQuery += ` AND created_at <= $${paramIndex}`;
+    dataQuery += ` AND created_at <= $${paramIndex}`;
+    values.push(filters.to_date);
+    paramIndex++;
+  }
 
-    query += ` ORDER BY created_at DESC`;
+  dataQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  values.push(limit, offset);
 
-    const result = await db.query(query, values);
-    return result.rows;
+  const countResult = await db.query(countQuery, values.slice(0, paramIndex));
+  const total = parseInt(countResult.rows[0].total, 10);
+  const dataResult = await db.query(dataQuery, values);
+  
+  return {
+    rows: dataResult.rows,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit)
+  };
   },
 
-  findAll: async (filters = {}) => {
-    let query = `SELECT * FROM v_transaction_details WHERE 1=1`;
-    const values = [];
-    let paramIndex = 1;
+  findAll: async (filters = {}, page = 1, limit = 10) => {
+  const offset = (page - 1) * limit;
+  let countQuery = `SELECT COUNT(*) as total FROM v_transaction_details WHERE 1=1`;
+  let dataQuery = `SELECT * FROM v_transaction_details WHERE 1=1`;
+  const filterValues = []; // uniquement pour les filtres
+  let paramIndex = 1;
 
-    if (filters.status) {
-      query += ` AND status = $${paramIndex++}`;
-      values.push(filters.status);
-    }
+  if (filters.status) {
+    countQuery += ` AND status = $${paramIndex}`;
+    dataQuery += ` AND status = $${paramIndex}`;
+    filterValues.push(filters.status);
+    paramIndex++;
+  }
 
-    if (filters.agent_id) {
-      query += ` AND agent_id = $${paramIndex++}`;
-      values.push(filters.agent_id);
-    }
+  if (filters.agent_id) {
+    countQuery += ` AND agent_id = $${paramIndex}`;
+    dataQuery += ` AND agent_id = $${paramIndex}`;
+    filterValues.push(filters.agent_id);
+    paramIndex++;
+  }
 
-    if (filters.from_date) {
-      query += ` AND created_at >= $${paramIndex++}`;
-      values.push(filters.from_date);
-    }
+  if (filters.from_date) {
+    countQuery += ` AND created_at >= $${paramIndex}`;
+    dataQuery += ` AND created_at >= $${paramIndex}`;
+    filterValues.push(filters.from_date);
+    paramIndex++;
+  }
 
-    if (filters.to_date) {
-      query += ` AND created_at <= $${paramIndex++}`;
-      values.push(filters.to_date);
-    }
+  if (filters.to_date) {
+    countQuery += ` AND created_at <= $${paramIndex}`;
+    dataQuery += ` AND created_at <= $${paramIndex}`;
+    filterValues.push(filters.to_date);
+    paramIndex++;
+  }
 
-    query += ` ORDER BY created_at DESC`;
+  // Requête de comptage avec uniquement les filtres
+  const countResult = await db.query(countQuery, filterValues);
+  const total = parseInt(countResult.rows[0].total, 10);
 
-    const result = await db.query(query, values);
-    return result.rows;
+  // Ajout de la pagination à la requête de données
+  dataQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  const dataValues = [...filterValues, limit, offset]; // filtres + pagination
+  const dataResult = await db.query(dataQuery, dataValues);
+  
+  return {
+    rows: dataResult.rows,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit)
+  };
   },
 
   validateByClient: async (id) => {
@@ -447,6 +491,33 @@ const Transaction = {
     `;
     const result = await db.query(query, [fromDate, toDate]);
     return result.rows;
+  },
+
+  getStatusCounts: async () => {
+    const query = `
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'en_attente') AS pending,
+        COUNT(*) FILTER (WHERE status = 'effectuee') AS completed,
+        COUNT(*) FILTER (WHERE status = 'annulee') AS cancelled
+      FROM transactions
+    `;
+    const result = await db.query(query);
+    return result.rows[0];
+  },
+
+  getSemiAdminCompletedPercentage: async (semiAdminId) => {
+    const query = `
+      SELECT
+        ROUND(
+          100.0 * COUNT(*) FILTER (WHERE processed_by_id = $1 AND processed_by_type = 'semi_admin') / 
+          NULLIF(COUNT(*) FILTER (WHERE status = 'effectuee'), 0),
+          2
+        ) AS percentage
+      FROM transactions
+      WHERE status = 'effectuee'
+    `;
+    const result = await db.query(query, [semiAdminId]);
+    return parseFloat(result.rows[0].percentage) || 0;
   },
 
   

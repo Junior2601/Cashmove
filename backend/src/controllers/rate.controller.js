@@ -225,6 +225,19 @@ const convertCurrency = async (req, res) => {
   }
 };
 
+const getRateStats = async (req, res) => {
+  try {
+    const stats = await RateService.getRateStats(getUserRole(req));
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    if (error.message === "Accès refusé") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    console.error(error);
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   upsertRate,
   getAllRates,
@@ -239,4 +252,5 @@ module.exports = {
   deleteRate,
   hardDeleteRate,
   convertCurrency,
+  getRateStats,
 };

@@ -265,7 +265,7 @@ CREATE TABLE transactions (
         'en_attente', 'validee', 'effectuee', 'echouee', 'expiree', 'annulee'
     )),
     CONSTRAINT valid_processor_type CHECK (
-        processed_by_type IS NULL OR processed_by_type IN ('admin', 'semi_admin', 'agent')
+        processed_by_type IS NULL OR processed_by_type IN ('admin', 'semi-admin', 'agent')
     )
 );
 
@@ -325,7 +325,7 @@ CREATE TABLE history (
     created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT valid_actor_type CHECK (
-        actor_type IN ('admin', 'semi_admin', 'agent', 'client', 'system')
+        actor_type IN ('admin', 'semi-admin', 'agent', 'client', 'system')
     )
 );
 

@@ -16,6 +16,6 @@ router.put("/:id", verifyToken, authorizeRoles("admin"), countryController.updat
 router.patch("/:id/disable", verifyToken, authorizeRoles("admin"), countryController.disableCountry);
 router.patch("/:id/reactivate", verifyToken, authorizeRoles("admin"), countryController.reactivateCountry);
 router.delete("/:id", verifyToken, authorizeRoles("admin"), countryController.deleteCountry);
-router.get("/stats", verifyToken, authorizeRoles("admin"), countryController.getCountryStats);
+// router.get("/stats", verifyToken, authorizeRoles("admin"), countryController.getCountryStats);
 
 module.exports = router;

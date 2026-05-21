@@ -17,7 +17,7 @@ export default function AdminLayout() {
     { path: '/admin/rates',        label: 'Taux',              icon: TrendingUp        },
     { path: '/admin/balances',     label: 'Balances',          icon: Wallet            },
     { path: '/admin/profits',      label: 'Profits',           icon: Scale             },
-    { path: '/admin/agent-gains',  label: 'Gains',             icon: HandCoins         },
+    { path: '/admin/gains',        label: 'Gains',             icon: HandCoins         },
     { path: '/admin/payements',    label: 'Moyens Payements',  icon: CreditCard        },
     { path: '/admin/numbers',      label: 'Numéros',           icon: Phone             },
     { path: '/admin/transactions', label: 'Transactions',      icon: FileText          },

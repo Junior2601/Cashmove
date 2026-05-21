@@ -86,6 +86,7 @@ const createTransactionService = async (data) => {
 // côté DB. Node.js fait UN SEUL appel pool.query(), pas de client checkout,
 // pas de transaction multi-étapes, pas de risque de zombie.
 const finalizeTransactionService = async (transaction_id, actor) => {
+  
   let result;
   try {
     const res = await db.query(
@@ -193,6 +194,19 @@ const exportTransactions = async (fromDate, toDate) => {
   return rows;
 };
 
+const getTransactionCounts = async () => {
+  return await Transaction.getStatusCounts();
+};
+
+const getSemiAdminShare = async (semiAdminId) => {
+  return await Transaction.getSemiAdminCompletedPercentage(semiAdminId);
+};
+
+const getLastFiveTransactions = async () => {
+  // Réutilise la méthode existante avec limit = 5
+  return await Transaction.getRecentTransactions(5);
+};
+
 module.exports = {
   createTransactionService,
   finalizeTransactionService,
@@ -200,5 +214,9 @@ module.exports = {
   getDashboardStats,
   getChartData,
   getRecentTransactions,
-  exportTransactions
+  exportTransactions,
+  getTransactionCounts,
+  getSemiAdminShare,
+  getLastFiveTransactions,
+
 };

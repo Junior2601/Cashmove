@@ -5,6 +5,7 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 
 // Routes publiques
 router.get("/", currencyController.getCurrencies);
+router.get("/stats", verifyToken, authorizeRoles("admin"), currencyController.getCurrencyStats);
 router.get("/:id", currencyController.getCurrencyById);
 
 // Routes protégées – admin uniquement

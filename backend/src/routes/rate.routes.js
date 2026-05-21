@@ -7,6 +7,7 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 // ROUTES PUBLIQUES
 // ======================
 router.get("/active", controller.getActiveRates);
+router.get("/stats", verifyToken, authorizeRoles("admin"), controller.getRateStats);
 router.get("/active/pair/:from_currency_id/:to_currency_id", controller.getActiveRateByPair);
 router.get("/active/codes/:from_code/:to_code", controller.getActiveRateByCodes);
 router.get("/active/country/:country_id", controller.getActiveRatesByCountry);

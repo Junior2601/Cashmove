@@ -2,21 +2,42 @@
 const {
   takeSnapshotService,
   getProfitService,
+  getProfitHistoryService,
   getCurrentBalancesService,
 } = require("../services/profit.service");
 
-// GET /api/profit?period=day&date=2026-05-19
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/profit?period=day|week|month&date=YYYY-MM-DD
+// ─────────────────────────────────────────────────────────────────────────────
 const getProfit = async (req, res) => {
   try {
     const { period = "day", date } = req.query;
     const data = await getProfitService(period, date);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    const status = err.message.includes("invalide") ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 };
 
-// GET /api/profit/current — valeur actuelle des balances en temps réel
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/profit/history?limit=30
+// Retourne l'historique des N derniers jours + résumé statistique
+// ─────────────────────────────────────────────────────────────────────────────
+const getProfitHistory = async (req, res) => {
+  try {
+    const { limit = 30 } = req.query;
+    const data = await getProfitHistoryService(limit);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/profit/current
+// Balances en temps réel + profit non réalisé du jour
+// ─────────────────────────────────────────────────────────────────────────────
 const getCurrentBalances = async (req, res) => {
   try {
     const data = await getCurrentBalancesService();
@@ -26,15 +47,24 @@ const getCurrentBalances = async (req, res) => {
   }
 };
 
-// POST /api/profit/snapshot — forcer un snapshot manuellement
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/profit/snapshot   { "type": "start_of_day" | "end_of_day" }
+// ─────────────────────────────────────────────────────────────────────────────
 const takeSnapshot = async (req, res) => {
   try {
     const { type } = req.body;
+    if (!type) {
+      return res.status(400).json({
+        success: false,
+        message: "Le champ 'type' est requis : start_of_day ou end_of_day",
+      });
+    }
     const data = await takeSnapshotService(type);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    const status = err.message.includes("invalide") ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 };
 
-module.exports = { getProfit, getCurrentBalances, takeSnapshot };
+module.exports = { getProfit, getProfitHistory, getCurrentBalances, takeSnapshot };

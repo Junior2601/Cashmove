@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import api from '../../api/axios';
 
-// Décode le token JWT pour extraire le rôle
 const getUserRoleFromToken = () => {
   const token = localStorage.getItem('token');
   if (!token) return null;
@@ -17,7 +16,6 @@ const getUserRoleFromToken = () => {
   }
 };
 
-// Composant Notification (identique)
 const Notification = ({ message, type, onClose }) => {
   const icons = {
     success: <CheckCircle className="w-5 h-5" />,
@@ -59,7 +57,6 @@ export default function AdminCountries() {
     setNotification({ message, type });
   }, []);
 
-  // Vérifie le rôle de l'utilisateur au chargement
   useEffect(() => {
     const role = getUserRoleFromToken();
     setIsAdmin(role === 'admin');
@@ -70,18 +67,14 @@ export default function AdminCountries() {
     setError(null);
     try {
       const role = getUserRoleFromToken();
-      // Choix de l'endpoint selon le rôle
       const url = role === 'admin' ? '/countries/all' : '/countries';
       const [countriesRes, statsRes, currenciesRes] = await Promise.all([
         api.get(url),
         api.get('/countries/stats'),
         api.get('/currencies')
       ]);
-      
       setCountries(countriesRes.data?.data || []);
       setStats(statsRes.data?.data || { total: 0, active: 0, inactive: 0 });
-      
-      // Ne garder que les devises actives pour le formulaire
       const allCurrencies = currenciesRes.data?.data || [];
       setCurrencies(allCurrencies.filter(c => c.is_active === true));
     } catch (err) {
@@ -97,9 +90,7 @@ export default function AdminCountries() {
     }
   };
 
-  useEffect(() => { 
-    fetchCountries(); 
-  }, []);
+  useEffect(() => { fetchCountries(); }, []);
 
   const filteredCountries = countries.filter(country =>
     country.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -119,7 +110,6 @@ export default function AdminCountries() {
         phone_prefix: modal.country.phone_prefix?.trim(),
         currency_id: parseInt(modal.country.currency_id)
       };
-
       if (modal.mode === "add") {
         const response = await api.post('/countries', countryData);
         showNotification(response.data?.message || 'Pays créé avec succès', 'success');
@@ -146,8 +136,7 @@ export default function AdminCountries() {
       showNotification(response.data?.message || 'Pays désactivé avec succès', 'success');
       fetchCountries();
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Erreur lors de la désactivation';
-      showNotification(errorMessage, 'error');
+      showNotification(err.response?.data?.message || 'Erreur lors de la désactivation', 'error');
     }
   };
 
@@ -157,8 +146,7 @@ export default function AdminCountries() {
       showNotification(response.data?.message || 'Pays réactivé avec succès', 'success');
       fetchCountries();
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Erreur lors de la réactivation';
-      showNotification(errorMessage, 'error');
+      showNotification(err.response?.data?.message || 'Erreur lors de la réactivation', 'error');
     }
   };
 
@@ -169,8 +157,7 @@ export default function AdminCountries() {
       showNotification(response.data?.message || 'Pays supprimé avec succès', 'success');
       fetchCountries();
     } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Erreur lors de la suppression';
-      showNotification(errorMessage, 'error');
+      showNotification(err.response?.data?.message || 'Erreur lors de la suppression', 'error');
     }
   };
 
@@ -322,20 +309,32 @@ export default function AdminCountries() {
                       </span>
                     </div>
                     {isAdmin && (
-                      <div className="flex gap-2 mt-3">
-                        <button onClick={() => setModal({ mode: "edit", country })} className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50">
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        <button
+                          onClick={() => setModal({ mode: "edit", country })}
+                          className="flex-1 min-w-[90px] flex items-center justify-center gap-1 px-3 py-2 text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50"
+                        >
                           <Edit size={14} /> Modifier
                         </button>
                         {country.is_active ? (
-                          <button onClick={() => disableCountry(country.id)} className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-orange-600 border border-orange-600 rounded-lg hover:bg-orange-50">
+                          <button
+                            onClick={() => disableCountry(country.id)}
+                            className="flex-1 min-w-[90px] flex items-center justify-center gap-1 px-3 py-2 text-orange-600 border border-orange-600 rounded-lg hover:bg-orange-50"
+                          >
                             <TrendingDown size={14} /> Désactiver
                           </button>
                         ) : (
-                          <button onClick={() => reactivateCountry(country.id)} className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-green-600 border border-green-600 rounded-lg hover:bg-green-50">
+                          <button
+                            onClick={() => reactivateCountry(country.id)}
+                            className="flex-1 min-w-[90px] flex items-center justify-center gap-1 px-3 py-2 text-green-600 border border-green-600 rounded-lg hover:bg-green-50"
+                          >
                             <TrendingUp size={14} /> Réactiver
                           </button>
                         )}
-                        <button onClick={() => deleteCountry(country.id)} className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50">
+                        <button
+                          onClick={() => deleteCountry(country.id)}
+                          className="flex-1 min-w-[90px] flex items-center justify-center gap-1 px-3 py-2 text-red-600 border border-red-600 rounded-lg hover:bg-red-50"
+                        >
                           <Trash2 size={14} /> Supprimer
                         </button>
                       </div>
@@ -351,64 +350,100 @@ export default function AdminCountries() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Indicatif</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Devise</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                  {isAdmin && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicatif</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Devise</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                  {isAdmin && (
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredCountries.map((country) => (
-                  <tr key={country.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      <div className="flex items-center"><Globe className="w-4 h-4 text-gray-400 mr-2" />{country.name}</div>
+                {filteredCountries.length === 0 ? (
+                  <tr>
+                    <td colSpan={isAdmin ? 6 : 5} className="px-6 py-12 text-center">
+                      <Globe className="w-12 h-12 mx-auto text-gray-400 mb-3" />
+                      <p className="text-gray-500">Aucun pays trouvé</p>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{country.code}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center"><Phone className="w-4 h-4 text-gray-400 mr-2" />{country.phone_prefix}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center"><Currency className="w-4 h-4 text-gray-400 mr-2" />
-                        {country.currency_code ? `${country.currency_code} (${country.currency_symbol || ''})` : 'Aucune'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${country.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                        {country.is_active ? "Actif" : "Inactif"}
-                      </span>
-                    </td>
-                    {isAdmin && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => setModal({ mode: "edit", country })} className="text-blue-600 hover:text-blue-900 flex items-center gap-1">
-                            <Edit size={16} /> Modifier
-                          </button>
-                          {country.is_active ? (
-                            <button onClick={() => disableCountry(country.id)} className="text-orange-600 hover:text-orange-900 flex items-center gap-1">
-                              <TrendingDown size={16} /> Désactiver
-                            </button>
-                          ) : (
-                            <button onClick={() => reactivateCountry(country.id)} className="text-green-600 hover:text-green-900 flex items-center gap-1">
-                              <TrendingUp size={16} /> Réactiver
-                            </button>
-                          )}
-                          <button onClick={() => deleteCountry(country.id)} className="text-red-600 hover:text-red-900 flex items-center gap-1">
-                            <Trash2 size={16} /> Supprimer
-                          </button>
+                  </tr>
+                ) : (
+                  filteredCountries.map((country) => (
+                    <tr key={country.id} className="hover:bg-gray-50 align-middle">
+                      <td className="px-6 py-4 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                          <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          {country.name}
                         </div>
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 align-middle">
+                        {country.code}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          {country.phone_prefix}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap align-middle">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Currency className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          {country.currency_code
+                            ? `${country.currency_code} (${country.currency_symbol || ''})`
+                            : 'Aucune'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap align-middle">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${country.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                          {country.is_active ? "Actif" : "Inactif"}
+                        </span>
+                      </td>
+                      {isAdmin && (
+                        <td className="px-6 py-4 whitespace-nowrap align-middle">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => setModal({ mode: "edit", country })}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                            >
+                              <Edit size={13} /> Modifier
+                            </button>
+                            {country.is_active ? (
+                              <button
+                                onClick={() => disableCountry(country.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 transition-colors"
+                              >
+                                <TrendingDown size={13} /> Désactiver
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => reactivateCountry(country.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-600 bg-green-50 border border-green-200 rounded-md hover:bg-green-100 transition-colors"
+                              >
+                                <TrendingUp size={13} /> Réactiver
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteCountry(country.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors"
+                            >
+                              <Trash2 size={13} /> Supprimer
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
           {filteredCountries.length > 0 && (
             <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
-              <p className="text-sm text-gray-600">{filteredCountries.length} pays trouvé{filteredCountries.length > 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-600">
+                {filteredCountries.length} pays trouvé{filteredCountries.length > 1 ? 's' : ''}
+              </p>
             </div>
           )}
         </div>
@@ -416,54 +451,107 @@ export default function AdminCountries() {
 
       {/* Modal d'ajout/modification */}
       {modal && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50" onClick={(e) => { if (e.target === e.currentTarget && !submitting) setModal(null); }}>
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center p-4 z-50"
+          onClick={(e) => { if (e.target === e.currentTarget && !submitting) setModal(null); }}
+        >
           <form onSubmit={saveCountry} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold flex items-center gap-2"><Globe className="w-5 h-5" />{modal.mode === "add" ? "Nouveau Pays" : "Modifier le Pays"}</h2>
-              <button type="button" onClick={() => !submitting && setModal(null)} disabled={submitting} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <Globe className="w-5 h-5" />
+                {modal.mode === "add" ? "Nouveau Pays" : "Modifier le Pays"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => !submitting && setModal(null)}
+                disabled={submitting}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nom du pays *</label>
-                <input value={modal.country.name} onChange={(e) => setModal({ ...modal, country: { ...modal.country, name: e.target.value } })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500" required disabled={submitting} />
+                <input
+                  value={modal.country.name}
+                  onChange={(e) => setModal({ ...modal, country: { ...modal.country, name: e.target.value } })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  disabled={submitting}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Code ISO (3 lettres) *</label>
-                <input value={modal.country.code} onChange={(e) => setModal({ ...modal, country: { ...modal.country, code: e.target.value.toUpperCase().slice(0, 3) } })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 uppercase" required maxLength={3} disabled={submitting} />
+                <input
+                  value={modal.country.code}
+                  onChange={(e) => setModal({ ...modal, country: { ...modal.country, code: e.target.value.toUpperCase().slice(0, 3) } })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 uppercase focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  maxLength={3}
+                  disabled={submitting}
+                />
                 <p className="text-xs text-gray-500 mt-1">Code ISO 3166-1 alpha-3</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Indicatif téléphonique *</label>
-                <input value={modal.country.phone_prefix} onChange={(e) => setModal({ ...modal, country: { ...modal.country, phone_prefix: e.target.value } })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2" required disabled={submitting} />
+                <input
+                  value={modal.country.phone_prefix}
+                  onChange={(e) => setModal({ ...modal, country: { ...modal.country, phone_prefix: e.target.value } })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  disabled={submitting}
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Devise *</label>
-                <select value={modal.country.currency_id || ''} onChange={(e) => setModal({ ...modal, country: { ...modal.country, currency_id: e.target.value ? parseInt(e.target.value) : null } })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2" required disabled={submitting}>
+                <select
+                  value={modal.country.currency_id || ''}
+                  onChange={(e) => setModal({ ...modal, country: { ...modal.country, currency_id: e.target.value ? parseInt(e.target.value) : null } })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  disabled={submitting}
+                >
                   <option value="">Sélectionnez une devise</option>
                   {currencies.map(currency => (
-                    <option key={currency.id} value={currency.id}>{currency.code} - {currency.name} ({currency.symbol})</option>
+                    <option key={currency.id} value={currency.id}>
+                      {currency.code} - {currency.name} ({currency.symbol})
+                    </option>
                   ))}
                 </select>
               </div>
               {modal.mode === "edit" && (
-                <div className="flex items-center">
-                  <input type="checkbox" id="is_active" checked={modal.country.is_active}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={modal.country.is_active}
                     onChange={(e) => setModal({ ...modal, country: { ...modal.country, is_active: e.target.checked } })}
-                    className="rounded border-gray-300 text-blue-600 mr-2" disabled={submitting} />
+                    className="rounded border-gray-300 text-blue-600"
+                    disabled={submitting}
+                  />
                   <label htmlFor="is_active" className="text-sm text-gray-700">Pays actif</label>
                 </div>
               )}
             </div>
             <div className="flex justify-end gap-3 pt-6">
-              <button type="button" onClick={() => !submitting && setModal(null)} disabled={submitting}
-                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Annuler</button>
-              <button type="submit" disabled={submitting}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                {submitting ? <><RefreshCw className="w-4 h-4 animate-spin" />{modal.mode === "add" ? "Création..." : "Modification..."}</> : (modal.mode === "add" ? "Créer" : "Modifier")}
+              <button
+                type="button"
+                onClick={() => !submitting && setModal(null)}
+                disabled={submitting}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                {submitting
+                  ? <><RefreshCw className="w-4 h-4 animate-spin" />{modal.mode === "add" ? "Création..." : "Modification..."}</>
+                  : modal.mode === "add" ? "Créer" : "Modifier"
+                }
               </button>
             </div>
           </form>

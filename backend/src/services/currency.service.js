@@ -157,6 +157,28 @@ class CurrencyService {
       client.release();
     }
   }
+
+  static async getStatistics(userRole) {
+    // Si l'utilisateur n'est pas admin, on peut ne lui montrer que les stats sur les actives,
+    // ou lui refuser l'accès. Ici on choisit : seul l'admin peut voir les inactives.
+    // On retourne toujours les trois valeurs, mais pour un non-admin on masque les inactives (0 ou null).
+    const stats = await CurrencyModel.getStatistics();
+
+    if (userRole !== "admin") {
+      // Pour un simple utilisateur, on ne révèle pas le nombre d'inactives
+      return {
+        total: parseInt(stats.total),
+        active: parseInt(stats.active),
+        inactive: null, // ou 0, mais mieux de ne pas exposer
+      };
+    }
+
+    return {
+      total: parseInt(stats.total),
+      active: parseInt(stats.active),
+      inactive: parseInt(stats.inactive),
+    };
+  }
 }
 
 module.exports = CurrencyService;

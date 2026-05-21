@@ -7,7 +7,12 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 // Routes accessibles selon les rôles
 
 // GET - Tous les agents (admin: tous, semi-admin: actifs, agent: autres agents)
-router.get("/", verifyToken, controller.getAgents);
+// router.get("/", verifyToken, controller.getAgents);
+router.get("/admin/all", verifyToken, authorizeRoles("admin"), controller.getAllAgentsForAdmin);
+// Admin & semi-admin : agents actifs seulement
+router.get("/staff/active", verifyToken, authorizeRoles("admin", "semi-admin"), controller.getActiveAgentsForStaff);
+// Public : agents actifs (sans token)
+router.get("/public/active", controller.getActiveAgentsPublic);
 router.get("/stats", verifyToken, authorizeRoles("admin", "semi-admin"), controller.getGlobalAgentStats);
 
 // GET - Agent par ID (avec vérification des droits)

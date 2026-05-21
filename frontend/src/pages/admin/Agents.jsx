@@ -123,7 +123,7 @@ export default function AdminAgents() {
     abortControllerRef.current = abortController;
     setLoading(true);
     try {
-      const res = await api.get('/agents', { signal: abortController.signal, timeout: 30000 });
+      const res = await api.get('/agents/admin/all', { signal: abortController.signal, timeout: 30000 });
       // Format attendu : { success: true, data: [...] }
       let agentsData = [];
       if (res.data && res.data.success && Array.isArray(res.data.data)) {

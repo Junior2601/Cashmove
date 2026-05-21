@@ -15,6 +15,7 @@ const historyRoutes = require("./history.routes");
 const transactionRoutes = require("./transaction.routes");
 const redirectionRoutes = require("./redirection.routes");
 const profitRoutes = require("./profit.routes");
+const gainRoutes = require("./gain.routes");
 // const benefitRoutes = require("./benefit.routes");
 
 
@@ -32,6 +33,7 @@ router.use("/history", historyRoutes);
 router.use("/transactions", transactionRoutes);
 router.use("/redirections", redirectionRoutes);
 router.use("/profit", profitRoutes);
+router.use("/gains", gainRoutes);
 // router.use("/benefit", benefitRoutes);
 
 // route test

@@ -185,12 +185,19 @@ const cancelTransaction = async (req, res) => {
 // GET transactions by agent (pour les agents)
 const getMyTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.findByAgentId(req.user.id, req.query);
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const result = await Transaction.findByAgentId(req.user.id, req.query, page, limit);
     
     res.json({
       success: true,
-      data: transactions,
-      count: transactions.length
+      data: result.rows,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages
+      }
     });
   } catch (err) {
     res.status(400).json({
@@ -203,12 +210,19 @@ const getMyTransactions = async (req, res) => {
 // GET all transactions (pour admin et semi-admin)
 const getAllTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.findAll(req.query);
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 5;
+    const result = await Transaction.findAll(req.query, page, limit);
     
     res.json({
       success: true,
-      data: transactions,
-      count: transactions.length
+      data: result.rows,
+      pagination: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages
+      }
     });
   } catch (err) {
     res.status(400).json({
@@ -300,6 +314,50 @@ const exportTransactionsToCsv = async (req, res) => {
   }
 };
 
+const getSemiAdminTransactionCounts = async (req, res) => {
+  try {
+    const counts = await service.getTransactionCounts();
+    res.json({
+      success: true,
+      data: {
+        pending: parseInt(counts.pending, 10),
+        completed: parseInt(counts.completed, 10),
+        cancelled: parseInt(counts.cancelled, 10),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getSemiAdminRecentTransactions = async (req, res) => {
+  try {
+    const transactions = await service.getLastFiveTransactions();
+    res.json({
+      success: true,
+      data: transactions,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getSemiAdminShare = async (req, res) => {
+  try {
+    const semiAdminId = req.user.id; // l'ID du semi-admin authentifié
+    const percentage = await service.getSemiAdminShare(semiAdminId);
+    res.json({
+      success: true,
+      data: {
+        percentage: percentage,
+        message: `Vous avez traité ${percentage}% des transactions effectuées.`,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createTransaction,
   getTransactionByIdController,
@@ -313,6 +371,9 @@ module.exports = {
   getDashboardStats,
   getChartData,
   getRecentTransactions,
-  exportTransactionsToCsv
+  exportTransactionsToCsv,
+  getSemiAdminTransactionCounts,
+  getSemiAdminRecentTransactions,
+  getSemiAdminShare,
 
 };

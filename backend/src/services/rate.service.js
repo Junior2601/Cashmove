@@ -173,6 +173,11 @@ class RateService {
       admin_rate: parseFloat(rate.rate) + 0.20,
     };
   }
+
+  static async getRateStats(userRole) {
+    if (userRole !== "admin") throw new Error("Accès refusé");
+    return await RateModel.getStats();
+  }
 }
 
 module.exports = RateService;

@@ -152,6 +152,33 @@ const getGlobalAgentStats = async (req, res) => {
   }
 };
 
+const getAllAgentsForAdmin = async (req, res) => {
+  try {
+    const agents = await AgentService.getAllAgentsForAdmin(req.user.role);
+    res.json({ success: true, data: agents });
+  } catch (error) {
+    res.status(403).json({ success: false, message: error.message });
+  }
+};
+
+const getActiveAgentsForStaff = async (req, res) => {
+  try {
+    const agents = await AgentService.getActiveAgentsForStaff(req.user.role);
+    res.json({ success: true, data: agents });
+  } catch (error) {
+    res.status(403).json({ success: false, message: error.message });
+  }
+};
+
+const getActiveAgentsPublic = async (req, res) => {
+  try {
+    const agents = await AgentService.getActiveAgentsPublic();
+    res.json({ success: true, data: agents });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createAgent,
   getAgents,
@@ -166,4 +193,9 @@ module.exports = {
   getAgentsByCountry,
   countAgentsByCountry,
   getGlobalAgentStats,
+  getAllAgentsForAdmin,
+  getActiveAgentsForStaff,
+  getActiveAgentsPublic,
+
+
 };

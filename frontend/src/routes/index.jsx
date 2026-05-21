@@ -19,9 +19,19 @@ import AdminDashboard from "../pages/admin/Dashboard";
 import AdminAgents  from "../pages/admin/Agents";
 import AdminSemiAdmins  from "../pages/admin/SemiAdmins";
 import AdminCountries  from "../pages/admin/Countries";
+import AdminCurrencies  from "../pages/admin/Currencies";
+import AdminRates  from "../pages/admin/Rates";
+import AdminBalances  from "../pages/admin/Balances";
+import AdminProfits  from "../pages/admin/Profits";
+import AdminGains  from "../pages/admin/Gains";
+import AdminPayements  from "../pages/admin/Payements";
+import AdminNumbers  from "../pages/admin/Numbers";
+import AdminTransactions  from "../pages/admin/Transactions";
+import AdminHistories  from "../pages/admin/Histories";
 
 // Pages Semi-Admin
 import SemiAdminDashboard from "../pages/semi-admin/Dashboard";
+import SemiAdminTransactions from "../pages/semi-admin/Transactions";
 
 // Pages Agent
 import AgentDashboard from "../pages/agent/Dashboard";
@@ -51,6 +61,15 @@ export default function AppRoutes() {
           <Route path="agents"      element={<AdminAgents />} />
           <Route path="semi-admins" element={<AdminSemiAdmins />} />
           <Route path="countries" element={<AdminCountries />} />
+          <Route path="currencies" element={<AdminCurrencies />} />
+          <Route path="rates" element={<AdminRates />} />
+          <Route path="balances" element={<AdminBalances />} />
+          <Route path="profits" element={<AdminProfits />} />
+          <Route path="gains" element={<AdminGains />} />
+          <Route path="payements" element={<AdminPayements />} />
+          <Route path="numbers" element={<AdminNumbers />} />
+          <Route path="transactions" element={<AdminTransactions />} />
+          <Route path="historiques" element={<AdminHistories />} />
         </Route>
 
         {/* ──────── SEMI-ADMIN ──────── */}
@@ -64,6 +83,7 @@ export default function AppRoutes() {
         >
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<SemiAdminDashboard />} />
+          <Route path="transactions" element={<SemiAdminTransactions />} />
         </Route>
 
         {/* ──────── AGENT ──────── */}
