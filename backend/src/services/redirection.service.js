@@ -124,9 +124,17 @@ const rejectRedirectionService = async (redirection_id, actor) => {
 // ─── 4. Lister les redirections d'un agent ────────────────────────────────
 const getAgentRedirectionsService = async (agent_id, status = null) => {
   let query = `
-    SELECT r.*, t.tracking_code, t.send_amount, t.receive_amount
+    SELECT
+      r.*,
+      t.tracking_code,
+      t.send_amount,
+      t.receive_amount,
+      t.status        AS transaction_status,
+      fa.name         AS from_agent_name,
+      fa.email        AS from_agent_email
     FROM redirections r
     JOIN transactions t ON r.transaction_id = t.id
+    JOIN agents fa      ON r.from_agent_id  = fa.id
     WHERE r.to_agent_id = $1
   `;
   const values = [agent_id];

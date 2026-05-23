@@ -36,6 +36,8 @@ import SemiAdminTransactions from "../pages/semi-admin/Transactions";
 // Pages Agent
 import AgentDashboard from "../pages/agent/Dashboard";
 import AgentTransaction from "../pages/agent/Transactions";
+import AgentRedirection from "../pages/agent/Redirections";
+import AgentNumbers from "../pages/agent/Numbers";
 
 export default function AppRoutes() {
   return (
@@ -99,6 +101,8 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<AgentDashboard />} />
           <Route path="transactions" element={<AgentTransaction />} />
+          <Route path="redirections" element={<AgentRedirection />} />
+          <Route path="numbers" element={<AgentNumbers />} />
         </Route>
 
         {/* ──────── FALLBACK ──────── */}

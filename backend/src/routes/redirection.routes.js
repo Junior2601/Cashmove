@@ -14,6 +14,14 @@ router.post(
   controller.createRedirection
 );
 
+// mes redirections (agent connecté)
+router.get(
+  "/mine",
+  verifyToken,
+  authorizeRoles("agent"),
+  controller.getMyRedirections
+);
+
 // accepter
 router.put(
   "/:id/accept",

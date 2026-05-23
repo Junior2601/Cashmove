@@ -46,7 +46,10 @@ export default function TransactionDetail() {
 
       // ✅ ROUTE CORRECTE : GET /transactions/:id
       const response = await api.get(`/transactions/${transactionId}`);
-      const transactionData = response.data.data;
+      // La réponse est { data: { transaction: {...}, history: [...] } }
+      // Il faut extraire l'objet transaction, pas le wrapper
+      const responseData = response.data.data;
+      const transactionData = responseData?.transaction || responseData;
       setTransaction(transactionData);
 
       // Gestion du timer

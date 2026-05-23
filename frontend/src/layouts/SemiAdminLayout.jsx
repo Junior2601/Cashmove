@@ -15,7 +15,7 @@ export default function SemiAdminLayout() {
     { path: '/semi-admin/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
     // { path: '/semi-admin/agents',       label: 'Agents',       icon: Users           },
     { path: '/semi-admin/transactions', label: 'Transactions', icon: ArrowLeftRight  },
-    { path: '/semi-admin/redirections', label: 'Redirections', icon: Redo2  },
+    // { path: '/semi-admin/redirections', label: 'Redirections', icon: Redo2  },
     // { path: '/semi-admin/historiques',  label: 'Historiques',  icon: History         },
     // { path: '/semi-admin/balances',     label: 'Balances',     icon: Wallet          },
     // { path: '/semi-admin/numbers',      label: 'Numéros',      icon: Phone           },

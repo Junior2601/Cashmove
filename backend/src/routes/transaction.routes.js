@@ -101,7 +101,7 @@ router.get(
   controller.getTransactionHistory
 );
 
-// Route dynamique (doit être la dernière)
-router.get('/:transaction_id', optionalToken, controller.getTransactionByIdController);
+// Route publique pour les clients (sans auth) - doit être la dernière
+router.get('/:transaction_id', controller.getTransactionByIdController);
 
 module.exports = router;

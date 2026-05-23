@@ -31,8 +31,6 @@ const createTransaction = async (req, res) => {
 const getTransactionByIdController = async (req, res) => {
   try {
     const { transaction_id } = req.params;
-    const user = req.user; // Peut être undefined pour les clients non authentifiés
-    
     // Récupérer la transaction avec les détails
     const transaction = await Transaction.findById(transaction_id);
     
@@ -46,10 +44,11 @@ const getTransactionByIdController = async (req, res) => {
     // Vérifier les droits d'accès selon le type d'utilisateur
     let hasAccess = false;
     
+    const user = req.user; // undefined si pas de token (route publique)
+
     if (!user) {
-      // Client non authentifié - ne peut voir que les transactions en attente (pour validation client)
-      // Normalement les clients utilisent le tracking_code, pas l'ID
-      hasAccess = transaction.status === 'en_attente';
+      // Client non authentifié - accès public autorisé (la transaction existe)
+      hasAccess = true;
     } 
     else if (user.role === 'admin' || user.role === 'semi-admin') {
       // Admin et semi-admin peuvent voir toutes les transactions

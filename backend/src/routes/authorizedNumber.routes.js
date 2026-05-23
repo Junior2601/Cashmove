@@ -5,12 +5,14 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 
 // Routes publiques (accès sans authentification)
 router.get("/", controller.getAllAuthorizedNumbers);
+router.post("/", verifyToken, authorizeRoles("admin"), controller.createAuthorizedNumber);
+router.get("/me", verifyToken, authorizeRoles("agent"), controller.getMyAuthorizedNumbers);
 router.get("/:id", controller.getAuthorizedNumberById);
 router.get("/country/:country_id", controller.getAuthorizedNumbersByCountry);
 router.get("/agent/:agent_id", controller.getAuthorizedNumbersByAgent);
 
 // Routes admin seulement
-router.post("/", verifyToken, authorizeRoles("admin"), controller.createAuthorizedNumber);
+
 router.put("/:id", verifyToken, authorizeRoles("admin"), controller.updateAuthorizedNumber);
 router.patch("/:id/disable", verifyToken, authorizeRoles("admin"), controller.disableAuthorizedNumber);
 router.patch("/:id/reactivate", verifyToken, authorizeRoles("admin"), controller.reactivateAuthorizedNumber);

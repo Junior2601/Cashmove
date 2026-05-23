@@ -190,6 +190,26 @@ const deleteAuthorizedNumber = async (req, res) => {
   }
 };
 
+const getMyAuthorizedNumbers = async (req, res) => {
+  try {
+    const agentId = req.user.id; // L'ID de l'agent connecté
+    const data = await AuthorizedNumberService.getAuthorizedNumbersByAgent(
+      agentId,
+      getUserRole(req) // sera "agent"
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error(error);
+    if (error.message === "Agent non trouvé") {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.message === "Cet agent n'est pas disponible") {
+      return res.status(403).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "Erreur serveur" });
+  }
+};
+
 module.exports = {
   createAuthorizedNumber,
   getAllAuthorizedNumbers,
@@ -201,4 +221,5 @@ module.exports = {
   disableAuthorizedNumber,
   reactivateAuthorizedNumber,
   deleteAuthorizedNumber,
+  getMyAuthorizedNumbers,
 };

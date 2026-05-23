@@ -42,8 +42,19 @@ const rejectRedirection = async (req, res) => {
   }
 };
 
+const getMyRedirections = async (req, res) => {
+  try {
+    const status = req.query.status || null; // ?status=pending|accepted|rejected
+    const result = await service.getAgentRedirectionsService(req.user.id, status);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   createRedirection,
   acceptRedirection,
   rejectRedirection,
+  getMyRedirections,
 };

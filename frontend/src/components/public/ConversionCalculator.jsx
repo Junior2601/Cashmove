@@ -6,67 +6,67 @@ export default function ConversionCalculator() {
   const [fromCountry, setFromCountry] = useState('');
   const [toCountry, setToCountry] = useState('');
   const [amount, setAmount] = useState(1000);
-  const [result, setResult] = useState({ 
-    convertedAmount: 0, 
+  const [result, setResult] = useState({
+    convertedAmount: 0,
     rate: 0,
-    commissionPercent: 0.75 
+    commissionPercent: 0.75
   });
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState('');
 
-  // Charger les pays actifs au montage du composant
   useEffect(() => {
     fetchCountries();
   }, []);
 
-  // Charger les pays depuis l'API
+  // Route corrigée : GET /api/countries (retourne les pays actifs)
   const fetchCountries = async () => {
     try {
       setLoading(true);
       setError('');
-      
-      console.log('🔄 Chargement des pays...');
-      const response = await api.get('/country/active');
-      
-      console.log('✅ Pays chargés:', response.data);
-      setCountries(response.data);
-      
-      // Définir les pays par défaut s'ils existent
-      if (response.data.length >= 2) {
-        setFromCountry(response.data[0].id.toString());
-        setToCountry(response.data[1].id.toString());
+
+      const response = await api.get('/countries');
+
+      // La réponse est { success, data: [...], message }
+      const data = response.data.success ? response.data.data : response.data;
+      setCountries(data);
+
+      if (data.length >= 2) {
+        setFromCountry(data[0].id.toString());
+        setToCountry(data[1].id.toString());
       }
-      
     } catch (err) {
-      console.error('💥 Erreur fetchCountries:', err);
+      console.error('Erreur fetchCountries:', err);
       setError(`Impossible de charger les pays: ${err.response?.data?.message || err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Calculer le taux de change
+  // Route corrigée : GET /api/rates/active/pair/:from_currency_id/:to_currency_id
+  // Les currency_id sont directement dans les objets pays (champ currency_id)
   const calculateExchange = async (amount, fromCountryId, toCountryId) => {
     if (!fromCountryId || !toCountryId || !amount || amount <= 0) {
-      return { 
-        convertedAmount: 0, 
-        rate: 0,
-        commissionPercent: 0.75 
-      };
+      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
+    }
+
+    const fromCountryData = getCountryById(fromCountryId);
+    const toCountryData = getCountryById(toCountryId);
+
+    if (!fromCountryData?.currency_id || !toCountryData?.currency_id) {
+      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
     }
 
     try {
-      setLoading(true);
+      setCalculating(true);
       setError('');
 
-      console.log(`🔄 Calcul taux: ${fromCountryId} → ${toCountryId}`);
       const response = await api.get(
-        `/rate/countries/${fromCountryId}/${toCountryId}`
+        `/rates/active/pair/${fromCountryData.currency_id}/${toCountryData.currency_id}`
       );
-      
-      console.log('✅ Données taux:', response.data);
-      
+
+      // La réponse est { success, data: { rate, commission_percent, ... } }
       if (!response.data.success) {
         throw new Error(response.data.message || 'Taux de change non disponible');
       }
@@ -74,37 +74,31 @@ export default function ConversionCalculator() {
       const rateData = response.data.data;
       const rate = parseFloat(rateData.rate) || 0;
       const commissionPercent = parseFloat(rateData.commission_percent) || 0.75;
-      
-      // Calcul du montant après commission
+
+      // Calcul : on déduit la commission du montant envoyé, puis on applique le taux
       const amountAfterCommission = amount * (1 - commissionPercent / 100);
       const convertedAmount = amountAfterCommission * rate;
 
-      return { 
-        convertedAmount, 
+      return {
+        convertedAmount,
         rate,
         commissionPercent,
         rawAmount: amount * rate
       };
-      
     } catch (err) {
-      console.error('💥 Erreur calcul:', err);
-      setError(`Erreur de calcul: ${err.response?.data?.message || err.message}`);
-      return { 
-        convertedAmount: 0, 
-        rate: 0,
-        commissionPercent: 0.75 
-      };
+      console.error('Erreur calcul taux:', err);
+      setError(`Taux non disponible: ${err.response?.data?.message || err.message}`);
+      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
     } finally {
-      setLoading(false);
+      setCalculating(false);
     }
   };
 
-  // Effet pour recalculer quand les paramètres changent
   useEffect(() => {
     if (fromCountry && toCountry && amount > 0) {
       calculateExchange(amount, fromCountry, toCountry).then(setResult);
     }
-  }, [amount, fromCountry, toCountry]);
+  }, [amount, fromCountry, toCountry, countries]);
 
   const swapCurrencies = () => {
     setFromCountry(toCountry);
@@ -112,7 +106,7 @@ export default function ConversionCalculator() {
   };
 
   const getCountryById = (id) => {
-    return countries.find(country => country.id.toString() === id.toString());
+    return countries.find(c => c.id.toString() === id.toString());
   };
 
   const formatCurrency = (amount, currencyCode) => {
@@ -121,8 +115,7 @@ export default function ConversionCalculator() {
         style: 'currency',
         currency: currencyCode
       }).format(amount);
-    } catch (error) {
-      // Fallback si la devise n'est pas reconnue
+    } catch {
       return `${amount.toLocaleString('fr-FR')} ${currencyCode}`;
     }
   };
@@ -161,7 +154,7 @@ export default function ConversionCalculator() {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-700 text-sm">{error}</p>
-          <button 
+          <button
             onClick={fetchCountries}
             className="mt-2 text-sm text-red-600 underline hover:text-red-800"
           >
@@ -172,7 +165,8 @@ export default function ConversionCalculator() {
 
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* From Country */}
+
+          {/* Pays d'envoi */}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -213,7 +207,7 @@ export default function ConversionCalculator() {
               </div>
             </div>
 
-            {/* Quick Amount Buttons */}
+            {/* Montants rapides */}
             <div className="grid grid-cols-3 gap-2">
               {commonAmounts.map(quickAmount => (
                 <button
@@ -228,18 +222,18 @@ export default function ConversionCalculator() {
             </div>
           </div>
 
-          {/* Swap Button */}
+          {/* Bouton swap */}
           <div className="md:flex md:items-center md:justify-center">
             <button
               onClick={swapCurrencies}
-              disabled={loading || !fromCountry || !toCountry}
+              disabled={loading || calculating || !fromCountry || !toCountry}
               className="w-full md:w-auto p-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowUpDown className="h-5 w-5 mx-auto" />
             </button>
           </div>
 
-          {/* To Country */}
+          {/* Pays de réception */}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -268,20 +262,22 @@ export default function ConversionCalculator() {
                 Montant reçu
               </label>
               <div className="bg-green-50 px-4 py-3 rounded-lg border border-green-200">
-                {loading ? (
+                {calculating ? (
                   <div className="flex items-center justify-center">
                     <Loader className="h-5 w-5 animate-spin text-green-600 mr-2" />
                     <span className="text-green-600">Calcul...</span>
                   </div>
                 ) : (
                   <span className="text-2xl font-bold text-green-600">
-                    {toCountryData ? formatCurrency(result.convertedAmount, toCountryData.currency_code) : '0'}
+                    {toCountryData
+                      ? formatCurrency(result.convertedAmount, toCountryData.currency_code)
+                      : '0'}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Exchange Rate Info */}
+            {/* Info taux */}
             {result.rate > 0 && (
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center space-x-2 mb-2">
@@ -289,7 +285,8 @@ export default function ConversionCalculator() {
                   <span className="text-sm font-medium text-gray-700">Taux de change</span>
                 </div>
                 <p className="text-lg font-semibold text-gray-900">
-                  1 {fromCountryData?.currency_symbol || fromCountryData?.currency_code} = {formatRate(result.rate)} {toCountryData?.currency_symbol || toCountryData?.currency_code}
+                  1 {fromCountryData?.currency_symbol || fromCountryData?.currency_code} ={' '}
+                  {formatRate(result.rate)} {toCountryData?.currency_symbol || toCountryData?.currency_code}
                 </p>
                 {result.commissionPercent && (
                   <p className="text-xs text-gray-500 mt-1">
@@ -301,7 +298,7 @@ export default function ConversionCalculator() {
           </div>
         </div>
 
-        {/* Rate Comparison */}
+        {/* Avantages */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
           <h5 className="font-semibold text-blue-900 mb-3">Avantages TransferBridge</h5>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">

@@ -7,18 +7,6 @@ export default function TrackingForm() {
   const [searchResult, setSearchResult] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Données simulées pour les pays avec mapping des devises
-  const countries = [
-    { id: 'Russie', name: 'Russie', currency: 'RUB', currencySymbol: '₽' },
-    { id: 'Côte d\'Ivoire', name: 'Côte d\'Ivoire', currency: 'XOF', currencySymbol: 'CFA' },
-    { id: 'Cameroun', name: 'Cameroun', currency: 'XAF', currencySymbol: 'FCFA' },
-    { id: 'Mali', name: 'Mali', currency: 'XOF', currencySymbol: 'CFA' },
-    { id: 'Congo', name: 'Congo', currency: 'XAF', currencySymbol: 'FCFA' },
-    { id: 'Bénin', name: 'Bénin', currency: 'XOF', currencySymbol: 'CFA' },
-    { id: 'Gabon', name: 'Gabon', currency: 'XAF', currencySymbol: 'FCFA' }
-  ];
-
-  // Fonction pour mapper les devises basée sur le code de devise
   const getCurrencyByCode = (currencyCode) => {
     const currencyMap = {
       'RUB': { currency: 'RUB', currencySymbol: '₽' },
@@ -32,17 +20,13 @@ export default function TrackingForm() {
 
   const formatCurrency = (amount, currency, currencySymbol) => {
     if (!amount) return 'Non spécifié';
-    
-    // Formater le nombre avec séparateurs de milliers
     const formattedAmount = new Intl.NumberFormat('fr-FR', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(amount);
-    
     return `${formattedAmount} ${currencySymbol}`;
   };
 
-  // Fonction pour convertir le statut du backend vers le frontend
   const getFormattedStatus = (status) => {
     const statusMap = {
       'en_attente': 'En attente',
@@ -72,29 +56,20 @@ export default function TrackingForm() {
   const getStatusColor = (status) => {
     const formattedStatus = getFormattedStatus(status);
     switch (formattedStatus) {
-      case 'En attente':
-        return 'yellow';
-      case 'Effectuée':
-        return 'green';
-      case 'Échouée':
-        return 'red';
-      case 'Expirée':
-        return 'gray';
-      default:
-        return 'gray';
+      case 'En attente': return 'yellow';
+      case 'Effectuée': return 'green';
+      case 'Échouée': return 'red';
+      case 'Expirée': return 'gray';
+      default: return 'gray';
     }
   };
 
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
-    
     if (!trackingCode.trim()) return;
-    
     setIsSearching(true);
-    
     try {
-      const res = await api.get(`/transactions/tracking/${trackingCode}`);
-      console.log('🔍 Résultat API:', res.data); // Pour debug
+      const res = await api.get(`/transactions/track/${trackingCode}`);
       setSearchResult(res.data);
     } catch (err) {
       console.error('❌ Erreur recherche:', err);
@@ -104,7 +79,6 @@ export default function TrackingForm() {
     }
   };
 
-  // Fonction pour formater la date
   const formatDate = (dateString) => {
     if (!dateString) return 'Non spécifié';
     return new Date(dateString).toLocaleString('fr-FR');
@@ -118,7 +92,6 @@ export default function TrackingForm() {
           <Search className="h-5 w-5 text-blue-600 mr-2" />
           Rechercher une Transaction
         </h4>
-        
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
           <div className="flex-1">
             <input
@@ -168,9 +141,9 @@ export default function TrackingForm() {
           ) : (
             <div>
               {/* Status Header */}
-              <div className={`bg-${getStatusColor(searchResult.data?.status)}-50 px-4 sm:px-6 py-3 sm:py-4 border-b border-${getStatusColor(searchResult.data?.status)}-200`}>
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
-                  <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className={`p-4 sm:p-6 bg-${getStatusColor(searchResult.data?.status)}-50 border-b border-${getStatusColor(searchResult.data?.status)}-100`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+                  <div className="flex items-center space-x-3">
                     {getStatusIcon(searchResult.data?.status)}
                     <div>
                       <h5 className="text-base sm:text-lg font-semibold text-gray-900">
@@ -202,7 +175,7 @@ export default function TrackingForm() {
                     <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.from_country_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.from_country || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
@@ -210,13 +183,13 @@ export default function TrackingForm() {
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de paiement</span>
-                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.sender_method_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.sender_method || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Montant envoyé</span>
                         <p className="font-medium text-sm sm:text-base">
                           {formatCurrency(
-                            searchResult.data?.send_amount, 
+                            searchResult.data?.send_amount,
                             searchResult.data?.from_currency_code,
                             searchResult.data?.from_currency_symbol
                           )}
@@ -234,7 +207,7 @@ export default function TrackingForm() {
                     <div className="bg-gray-50 rounded-lg p-3 sm:p-4 space-y-2 sm:space-y-3">
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Pays</span>
-                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.to_country_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.to_country || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Téléphone</span>
@@ -242,13 +215,13 @@ export default function TrackingForm() {
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Méthode de réception</span>
-                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.receiver_method_name || 'Non spécifié'}</p>
+                        <p className="font-medium text-sm sm:text-base">{searchResult.data?.receiver_method || 'Non spécifié'}</p>
                       </div>
                       <div>
                         <span className="text-xs text-gray-500 uppercase tracking-wide">Montant à recevoir</span>
                         <p className="font-medium text-green-600 text-sm sm:text-base">
                           {formatCurrency(
-                            searchResult.data?.receive_amount, 
+                            searchResult.data?.receive_amount,
                             searchResult.data?.to_currency_code,
                             searchResult.data?.to_currency_symbol
                           )}

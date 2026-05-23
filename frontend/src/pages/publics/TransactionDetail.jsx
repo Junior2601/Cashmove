@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
 import { Clock, User, Phone, CreditCard, CheckCircle, AlertCircle, Copy, ArrowLeft } from 'lucide-react';
@@ -10,98 +10,87 @@ export default function TransactionDetail() {
   const [transaction, setTransaction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [timeLeft, setTimeLeft] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(null); // null = pas encore calculé
   const [isValidating, setIsValidating] = useState(false);
   const [copiedField, setCopiedField] = useState('');
   const [isClientSideExpired, setIsClientSideExpired] = useState(false);
 
-  // Déchiffrer l'ID
-  const getDecryptedId = () => {
-    if (!encryptedId) {
-      setError('ID de transaction invalide');
-      return null;
-    }
-    const decryptedId = decryptId(encryptedId);
-    if (!decryptedId) {
-      setError('Transaction non trouvée ou ID invalide');
-      return null;
-    }
-    console.log('🔓 ID déchiffré:', { encrypted: encryptedId, decrypted: decryptedId });
-    return decryptedId;
-  };
+  // Ref pour éviter les appels multiples fetchTransaction
+  const fetchingRef = useRef(false);
+  const timerRef = useRef(null);
 
-  // Calcul du temps restant (secondes)
+  const getDecryptedId = useCallback(() => {
+    if (!encryptedId) return null;
+    return decryptId(encryptedId) || null;
+  }, [encryptedId]);
+
   const calculateTimeLeft = (expiresAt) => {
     if (!expiresAt) return 0;
-    const diff = Math.max(0, Math.floor((new Date(expiresAt) - new Date()) / 1000));
-    return diff;
+    return Math.max(0, Math.floor((new Date(expiresAt) - new Date()) / 1000));
   };
 
-  // Charger la transaction
-  const fetchTransaction = async () => {
+  // Charger la transaction — stable grâce à useCallback + fetchingRef
+  const fetchTransaction = useCallback(async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
     try {
       setLoading(true);
       const transactionId = getDecryptedId();
-      if (!transactionId) return;
+      if (!transactionId) {
+        setError('ID de transaction invalide');
+        return;
+      }
 
-      // ✅ ROUTE CORRECTE : GET /transactions/:id
       const response = await api.get(`/transactions/${transactionId}`);
-      const transactionData = response.data.data;
+      const responseData = response.data.data;
+      const transactionData = responseData?.transaction || responseData;
       setTransaction(transactionData);
 
-      // Gestion du timer
-      if (transactionData.status === 'en_attente' && transactionData.expires_at && !transactionData.client_validated) {
+      // Calculer le timer UNE SEULE FOIS ici
+      if (
+        transactionData.status === 'en_attente' &&
+        !transactionData.client_validated &&
+        transactionData.expires_at
+      ) {
         const left = calculateTimeLeft(transactionData.expires_at);
         setTimeLeft(left);
         setIsClientSideExpired(left <= 0);
       } else {
         setTimeLeft(0);
-        setIsClientSideExpired(transactionData.status === 'en_attente' && !transactionData.client_validated);
+        setIsClientSideExpired(false);
       }
     } catch (err) {
       console.error('Erreur chargement transaction:', err);
-      setError('Transaction non trouvée');
+      setError(err.response?.data?.message || 'Transaction non trouvée');
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  };
+  }, [getDecryptedId]);
 
+  // Chargement initial
   useEffect(() => {
     fetchTransaction();
-  }, [encryptedId]);
+  }, [fetchTransaction]);
 
-  // Timer
+  // Timer — tourne seulement si timeLeft est un nombre > 0
   useEffect(() => {
-    if (!transaction || transaction.status !== 'en_attente' || transaction.client_validated) {
-      setTimeLeft(0);
-      setIsClientSideExpired(transaction?.status === 'en_attente' && !transaction?.client_validated);
-      return;
-    }
-    if (timeLeft <= 0) {
-      setIsClientSideExpired(true);
-      fetchTransaction();
-      return;
-    }
-    const timer = setInterval(() => {
+    if (timeLeft === null || timeLeft <= 0) return;
+
+    timerRef.current = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
-          clearInterval(timer);
+          clearInterval(timerRef.current);
           setIsClientSideExpired(true);
-          fetchTransaction();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, transaction]);
 
-  useEffect(() => {
-    return () => {
-      setTimeLeft(0);
-      setIsClientSideExpired(false);
-    };
-  }, []);
+    return () => clearInterval(timerRef.current);
+  }, [timeLeft === 0 ? 0 : !!timeLeft]); // re-lance seulement si on passe de null → valeur
 
   const copyToClipboard = async (text, field) => {
     try {
@@ -113,7 +102,6 @@ export default function TransactionDetail() {
     }
   };
 
-  // Validation client
   const handleValidate = async () => {
     if (!transaction || transaction.status !== 'en_attente') return;
     try {
@@ -121,13 +109,11 @@ export default function TransactionDetail() {
       const transactionId = getDecryptedId();
       if (!transactionId) return;
 
-      // ✅ ROUTE CORRECTE : PUT /transactions/validate/:id
       await api.put(`/transactions/validate/${transactionId}`);
-
-      await fetchTransaction();
+      clearInterval(timerRef.current);
       setTimeLeft(0);
       setIsClientSideExpired(false);
-      alert('Transaction validée avec succès !');
+      await fetchTransaction();
     } catch (err) {
       console.error('Erreur validation:', err);
       alert(err.response?.data?.message || 'Erreur lors de la validation');
@@ -137,7 +123,7 @@ export default function TransactionDetail() {
   };
 
   const formatTime = (seconds) => {
-    if (seconds <= 0) return '00:00';
+    if (!seconds || seconds <= 0) return '00:00';
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -146,18 +132,19 @@ export default function TransactionDetail() {
   const formatCurrency = (amount, currencyCode = 'EUR') => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
-      currency: currencyCode
+      currency: currencyCode || 'EUR',
     }).format(amount);
   };
 
-  const isExpired = transaction?.status === 'expiree';
+  const isExpired   = transaction?.status === 'expiree';
   const isCompleted = transaction?.status === 'effectuee';
-  const isFailed = transaction?.status === 'echouee';
-  const isPending = transaction?.status === 'en_attente';
+  const isFailed    = transaction?.status === 'echouee';
+  const isPending   = transaction?.status === 'en_attente';
+  const isCancelled = transaction?.status === 'annulee';
   const isClientValidated = transaction?.client_validated;
 
-  const shouldShowTimer = isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0;
-  const shouldShowExpiredMessage = (isClientSideExpired || isExpired) && isPending && !isClientValidated;
+  const shouldShowTimer          = isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0;
+  const shouldShowExpiredMessage = isClientSideExpired || isExpired;
 
   if (loading) {
     return (
@@ -176,7 +163,7 @@ export default function TransactionDetail() {
         <div className="text-center">
           <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Transaction non trouvée</h2>
-          <p className="text-gray-600 mb-6">{error || 'La transaction demandée n\'existe pas'}</p>
+          <p className="text-gray-600 mb-6">{error || "La transaction demandée n'existe pas"}</p>
           <button
             onClick={() => navigate('/')}
             className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
@@ -209,19 +196,21 @@ export default function TransactionDetail() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Colonne principale */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Statut et timer */}
+            {/* Statut */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Statut du transfert</h2>
                 <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  isPending ? 'bg-yellow-100 text-yellow-800' :
-                  isCompleted ? 'bg-green-100 text-green-800' :
-                  isFailed ? 'bg-red-100 text-red-800' :
-                  'bg-gray-100 text-gray-800'
+                  isPending   ? 'bg-yellow-100 text-yellow-800' :
+                  isCompleted ? 'bg-green-100 text-green-800'  :
+                  isFailed    ? 'bg-red-100 text-red-800'      :
+                  isCancelled ? 'bg-gray-100 text-gray-800'    :
+                                'bg-red-50 text-red-700'
                 }`}>
-                  {isPending ? 'En attente' : 
-                   isCompleted ? 'Effectuée' : 
-                   isFailed ? 'Échouée' : 'Expirée'}
+                  {isPending   ? (isClientValidated ? 'Validée – en attente agent' : 'En attente') :
+                   isCompleted ? 'Effectuée'  :
+                   isFailed    ? 'Échouée'    :
+                   isCancelled ? 'Annulée'    : 'Expirée'}
                 </div>
               </div>
 
@@ -231,7 +220,7 @@ export default function TransactionDetail() {
                     <div className="flex items-center space-x-3">
                       <Clock className="h-6 w-6 text-yellow-600" />
                       <div>
-                        <p className="font-semibold text-yellow-800">Temps restant</p>
+                        <p className="font-semibold text-yellow-800">Temps restant pour valider</p>
                         <p className="text-2xl font-bold text-yellow-900">{formatTime(timeLeft)}</p>
                       </div>
                     </div>
@@ -241,9 +230,6 @@ export default function TransactionDetail() {
                         {new Date(transaction.expires_at).toLocaleTimeString('fr-FR')}
                       </p>
                     </div>
-                  </div>
-                  <div className="mt-2 text-xs text-yellow-600">
-                    ⏰ Système UTC activé - Expiration dans {formatTime(timeLeft)}
                   </div>
                 </div>
               )}
@@ -297,15 +283,17 @@ export default function TransactionDetail() {
                     <p className="font-semibold text-gray-900">Numéro de paiement</p>
                     <div className="flex items-center justify-between">
                       <p className="text-xl font-bold text-gray-900 font-mono">
-                        {transaction.authorized_number || 'Chargement...'}
+                        {transaction.authorized_number || '—'}
                       </p>
-                      <button
-                        onClick={() => copyToClipboard(transaction.authorized_number, 'number')}
-                        className="flex items-center space-x-1 text-blue-600 hover:text-blue-700"
-                      >
-                        <Copy className="h-4 w-4" />
-                        <span className="text-sm">{copiedField === 'number' ? 'Copié !' : 'Copier'}</span>
-                      </button>
+                      {transaction.authorized_number && (
+                        <button
+                          onClick={() => copyToClipboard(transaction.authorized_number, 'number')}
+                          className="flex items-center space-x-1 text-blue-600 hover:text-blue-700"
+                        >
+                          <Copy className="h-4 w-4" />
+                          <span className="text-sm">{copiedField === 'number' ? 'Copié !' : 'Copier'}</span>
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
                       Transférez le montant à ce numéro via {transaction.sender_method_name}
@@ -333,7 +321,7 @@ export default function TransactionDetail() {
                   <li>• Ne partagez pas le code de suivi</li>
                   {shouldShowTimer && <li>• La transaction expire dans {formatTime(timeLeft)}</li>}
                   {shouldShowExpiredMessage && <li>• La transaction a expiré</li>}
-                  {isClientValidated && <li>• Transaction validée - en attente du versement</li>}
+                  {isClientValidated && <li>• Transaction validée – en attente du versement agent</li>}
                 </ul>
               </div>
             </div>
@@ -359,14 +347,8 @@ export default function TransactionDetail() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Taux appliqué</span>
-                  <span className="font-semibold">
+                  <span className="font-semibold text-sm">
                     1 {transaction.from_currency_code} = {transaction.rate_applied} {transaction.to_currency_code}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Frais</span>
-                  <span className="font-semibold">
-                    {formatCurrency(0, transaction.from_currency_code)}
                   </span>
                 </div>
                 <div className="border-t pt-3 mt-3">
@@ -405,13 +387,13 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {isClientValidated && (
+            {isClientValidated && isPending && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-6">
                 <div className="text-center">
                   <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-3" />
                   <h3 className="text-lg font-semibold text-green-900 mb-2">Transaction validée</h3>
                   <p className="text-sm text-green-700">
-                    Vous avez confirmé avoir effectué le paiement. L'agent procédera maintenant au versement.
+                    Vous avez confirmé le paiement. L'agent procédera au versement.
                   </p>
                 </div>
               </div>
@@ -427,11 +409,11 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {(isCompleted || isFailed || isExpired) && (
+            {(isCompleted || isFailed || (isExpired && !isPending)) && (
               <div className={`rounded-xl p-6 ${
                 isCompleted ? 'bg-green-50 border border-green-200' :
-                isFailed ? 'bg-red-50 border border-red-200' :
-                'bg-gray-50 border border-gray-200'
+                isFailed    ? 'bg-red-50 border border-red-200'    :
+                              'bg-gray-50 border border-gray-200'
               }`}>
                 <div className="text-center">
                   {isCompleted ? (
@@ -442,18 +424,15 @@ export default function TransactionDetail() {
                   <h3 className={`text-lg font-semibold mb-2 ${
                     isCompleted ? 'text-green-900' : 'text-red-900'
                   }`}>
-                    {isCompleted ? 'Transfert réussi !' : 
-                     isFailed ? 'Transfert échoué' : 'Transfert expiré'}
+                    {isCompleted ? 'Transfert réussi !'   :
+                     isFailed    ? 'Transfert échoué'     : 'Transfert expiré'}
                   </h3>
-                  <p className={`text-sm ${
-                    isCompleted ? 'text-green-700' : 'text-red-700'
-                  }`}>
-                    {isCompleted 
-                      ? 'Votre transfert a été traité avec succès.' 
+                  <p className={`text-sm ${isCompleted ? 'text-green-700' : 'text-red-700'}`}>
+                    {isCompleted
+                      ? 'Votre transfert a été traité avec succès.'
                       : isFailed
-                      ? 'Le transfert n\'a pas pu être complété.'
-                      : 'Le délai de validation est dépassé.'
-                    }
+                      ? "Le transfert n'a pas pu être complété."
+                      : 'Le délai de validation est dépassé.'}
                   </p>
                 </div>
               </div>
