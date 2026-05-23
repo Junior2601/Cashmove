@@ -140,6 +140,7 @@ const Transaction = {
 
   findByAgentId: async (agentId, filters = {}, page = 1, limit = 10) => {
   const offset = (page - 1) * limit;
+
   let countQuery = `
     SELECT COUNT(*) as total
     FROM v_transaction_details 
@@ -149,37 +150,40 @@ const Transaction = {
     SELECT * FROM v_transaction_details 
     WHERE agent_id = $1
   `;
-  const values = [agentId];
+
+  // filterValues contient agentId + filtres optionnels (sans limit/offset)
+  const filterValues = [agentId];
   let paramIndex = 2;
 
   if (filters.status) {
     countQuery += ` AND status = $${paramIndex}`;
-    dataQuery += ` AND status = $${paramIndex}`;
-    values.push(filters.status);
+    dataQuery  += ` AND status = $${paramIndex}`;
+    filterValues.push(filters.status);
     paramIndex++;
   }
 
   if (filters.from_date) {
     countQuery += ` AND created_at >= $${paramIndex}`;
-    dataQuery += ` AND created_at >= $${paramIndex}`;
-    values.push(filters.from_date);
+    dataQuery  += ` AND created_at >= $${paramIndex}`;
+    filterValues.push(filters.from_date);
     paramIndex++;
   }
 
   if (filters.to_date) {
     countQuery += ` AND created_at <= $${paramIndex}`;
-    dataQuery += ` AND created_at <= $${paramIndex}`;
-    values.push(filters.to_date);
+    dataQuery  += ` AND created_at <= $${paramIndex}`;
+    filterValues.push(filters.to_date);
     paramIndex++;
   }
 
-  dataQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-  values.push(limit, offset);
-
-  const countResult = await db.query(countQuery, values.slice(0, paramIndex));
+  // COUNT reçoit uniquement les filtres (pas limit/offset)
+  const countResult = await db.query(countQuery, filterValues);
   const total = parseInt(countResult.rows[0].total, 10);
-  const dataResult = await db.query(dataQuery, values);
-  
+
+  // DATA reçoit filtres + pagination
+  dataQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  const dataResult = await db.query(dataQuery, [...filterValues, limit, offset]);
+
   return {
     rows: dataResult.rows,
     total,
@@ -502,6 +506,21 @@ const Transaction = {
       FROM transactions
     `;
     const result = await db.query(query);
+    return result.rows[0];
+  },
+
+  getStatsByAgentId: async (agentId) => {
+    const query = `
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'validee')   AS validated_count,
+        COUNT(*) FILTER (WHERE status = 'effectuee') AS completed_count,
+        COUNT(*) FILTER (WHERE status = 'annulee')   AS cancelled_count,
+        COALESCE(SUM(send_amount) FILTER (WHERE status = 'effectuee'), 0) AS total_send_amount,
+        COALESCE(SUM(receive_amount) FILTER (WHERE status = 'effectuee'), 0) AS total_receive_amount
+      FROM transactions
+      WHERE assigned_agent_id = $1
+    `;
+    const result = await db.query(query, [agentId]);
     return result.rows[0];
   },
 

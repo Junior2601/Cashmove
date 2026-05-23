@@ -7,6 +7,7 @@ const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware"
 router.get("/", verifyToken, authorizeRoles("admin"), GainController.getAllGains);
 router.get("/summary/current-month", verifyToken, authorizeRoles("admin"), GainController.getGlobalCurrentMonthSummary);
 router.get("/history/monthly", verifyToken, authorizeRoles("admin"), GainController.getMonthlyHistory);
+router.get("/agent/:agentId/current-month", verifyToken, authorizeRoles("admin", "agent"), GainController.getCurrentMonthSummaryByAgent);
 router.get("/agent/:agentId/grouped-by-currency", verifyToken, authorizeRoles("admin"), GainController.getGainsGroupedByCurrency);
 router.get("/agent/:agentId/monthly", verifyToken, authorizeRoles("admin"), GainController.getMonthlyGainsByAgent);
 router.get("/agent/:agentId/detailed", verifyToken, authorizeRoles("admin"), GainController.getDetailedGainsByAgent);

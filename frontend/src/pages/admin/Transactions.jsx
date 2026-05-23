@@ -25,7 +25,9 @@ import {
   X,
   CheckCheck,
   Ban,
-  Loader2
+  Loader2,
+  Share2,
+  Copy
 } from "lucide-react";
 
 // ─── Modal de confirmation ───────────────────────────────────────────────────
@@ -45,12 +47,12 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel, 
         {reasonRequired && (
           <div className="mb-4">
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              Raison de l'annulation <span className="text-red-500">*</span>
+              Raison <span className="text-red-500">*</span>
             </label>
             <textarea
               value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder="Ex : Demande du client, erreur de saisie..."
+              placeholder="Ex : Demande du client, fonds insuffisants..."
               rows={3}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 focus:border-transparent resize-none"
             />
@@ -83,12 +85,100 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel, 
   );
 }
 
+// ─── Modal de redirection ────────────────────────────────────────────────────
+function RedirectModal({ open, onClose, onConfirm, agents, loading, transaction, selectedAgentId, setSelectedAgentId, reason, setReason, error }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+        <div className="flex items-start gap-3 mb-4">
+          <Share2 size={22} className="text-indigo-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Rediriger la transaction</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              {transaction?.tracking_code} — {transaction?.receive_amount} {transaction?.to_currency_code}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Agent destinataire <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={selectedAgentId || ""}
+              onChange={e => setSelectedAgentId(e.target.value ? parseInt(e.target.value, 10) : "")}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+            >
+              <option value="">-- Choisir un agent --</option>
+              {agents.map(agent => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name} ({agent.email}) - {agent.country_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Raison de la redirection <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Ex : Fonds insuffisants, l'agent est indisponible..."
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-400 resize-none"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm flex items-start gap-2">
+              <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={loading || !selectedAgentId || !reason.trim()}
+            className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            Confirmer la redirection
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Modal de détail (centré) ────────────────────────────────────────────────
-function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, actionLoading }) {
+function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, onRedirect, actionLoading }) {
   if (!transaction) return null;
 
   const canFinalize = transaction.status === "validee";
   const canCancel   = transaction.status === "en_attente" || transaction.status === "validee";
+  const canRedirect = transaction.status === "validee";
+
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(err => console.error("Erreur copie :", err));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
@@ -112,7 +202,22 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, ac
             <InfoItem label="Méthode envoi" value={transaction.sender_method} />
             <InfoItem label="Méthode réception" value={transaction.receiver_method} />
             <InfoItem label="Tél. expéditeur" value={transaction.sender_phone} />
-            <InfoItem label="Tél. destinataire" value={transaction.receiver_phone} />
+            {/* Champ destinataire avec copie */}
+            <div>
+              <p className="text-xs text-gray-400 mb-0.5">Tél. destinataire</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-gray-800">{transaction.receiver_phone || "—"}</p>
+                {transaction.receiver_phone && (
+                  <button
+                    onClick={() => copyToClipboard(transaction.receiver_phone)}
+                    className="p-1 rounded-md hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                    title="Copier le numéro"
+                  >
+                    {copied ? <CheckCircle size={14} className="text-green-500" /> : <Copy size={14} />}
+                  </button>
+                )}
+              </div>
+            </div>
             <InfoItem label="Agent" value={transaction.agent_name} />
             <InfoItem label="Numéro autorisé" value={transaction.authorized_number} />
             <InfoItem label="Statut" value={translateStatus(transaction.status)} colored status={transaction.status} />
@@ -120,8 +225,8 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, ac
           </div>
         </div>
 
-        {(canFinalize || canCancel) && (
-          <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
+        {(canFinalize || canCancel || canRedirect) && (
+          <div className="flex justify-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
             {canCancel && (
               <button
                 onClick={() => onCancel(transaction)}
@@ -130,6 +235,16 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, ac
               >
                 {actionLoading === "cancel" ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
                 Annuler
+              </button>
+            )}
+            {canRedirect && (
+              <button
+                onClick={() => onRedirect(transaction)}
+                disabled={actionLoading !== null}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 border border-indigo-300 bg-white rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-50"
+              >
+                <Share2 size={12} />
+                Rediriger
               </button>
             )}
             {canFinalize && (
@@ -233,7 +348,7 @@ export default function AdminTransactions() {
 
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 10 });
 
-  // Filtres compatibles avec l'API : agent_id, status, from_date, to_date
+  // Filtres
   const [filters, setFilters] = useState({
     agent_id: "",
     status: "",
@@ -244,17 +359,38 @@ export default function AdminTransactions() {
   const [showFilters, setShowFilters]             = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
 
+  // États pour la redirection
+  const [activeAgents, setActiveAgents] = useState([]);
+  const [redirectModalOpen, setRedirectModalOpen] = useState(false);
+  const [redirectTransaction, setRedirectTransaction] = useState(null);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [redirectReason, setRedirectReason] = useState("");
+  const [redirectLoading, setRedirectLoading] = useState(false);
+  const [redirectError, setRedirectError] = useState("");
+
+  // Modales finalisation / annulation
   const [finalizeModal, setFinalizeModal] = useState({ open: false, transaction: null });
   const [cancelModal, setCancelModal]     = useState({ open: false, transaction: null });
   const [cancelReason, setCancelReason]   = useState("");
 
-  // ── Fetch transactions avec pagination et filtres ─────────────────────────
+  // Charger les agents actifs (admin & semi-admin peuvent les voir)
+  const fetchActiveAgents = useCallback(async () => {
+    try {
+      const res = await api.get("/agents/staff/active");
+      if (res.data?.success) {
+        setActiveAgents(res.data.data || []);
+      }
+    } catch (err) {
+      console.error("Erreur chargement agents actifs:", err);
+    }
+  }, []);
+
+  // Charger les transactions
   const fetchTransactions = useCallback(async (page = 1) => {
     setLoading(true);
     setError(null);
     try {
       const params = { page, limit: pagination.limit };
-      // Ajouter les filtres non vides
       if (filters.agent_id) {
         const agentIdNum = parseInt(filters.agent_id, 10);
         if (!isNaN(agentIdNum)) params.agent_id = agentIdNum;
@@ -291,7 +427,7 @@ export default function AdminTransactions() {
     }
   }, [filters, pagination.limit]);
 
-  // Recharger quand les filtres ou la limite changent (page=1)
+  // Rechargement initial et lors des changements de filtres
   useEffect(() => {
     const timer = setTimeout(() => {
       setPagination(p => ({ ...p, page: 1 }));
@@ -299,6 +435,10 @@ export default function AdminTransactions() {
     }, 300);
     return () => clearTimeout(timer);
   }, [filters, pagination.limit, fetchTransactions]);
+
+  useEffect(() => {
+    fetchActiveAgents();
+  }, [fetchActiveAgents]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const handleFinalizeConfirm = async () => {
@@ -338,6 +478,31 @@ export default function AdminTransactions() {
     }
   };
 
+  const handleRedirectConfirm = async () => {
+    if (!redirectTransaction || !selectedAgentId || !redirectReason.trim()) return;
+    setRedirectLoading(true);
+    setRedirectError("");
+    try {
+      await api.post("/redirections", {
+        transaction_id: redirectTransaction.id,
+        to_agent_id: selectedAgentId,
+        reason: redirectReason
+      });
+      setActionSuccess(`Transaction ${redirectTransaction.tracking_code} redirigée avec succès.`);
+      setRedirectModalOpen(false);
+      setRedirectTransaction(null);
+      setSelectedAgentId("");
+      setRedirectReason("");
+      setSelectedTransaction(null);
+      fetchTransactions(pagination.page);
+    } catch (err) {
+      const msg = err.response?.data?.message || "Erreur lors de la redirection.";
+      setRedirectError(msg);
+    } finally {
+      setRedirectLoading(false);
+    }
+  };
+
   const openFinalize = (tx) => {
     setActionError(null);
     setFinalizeModal({ open: true, transaction: tx });
@@ -349,7 +514,15 @@ export default function AdminTransactions() {
     setCancelModal({ open: true, transaction: tx });
   };
 
-  // ── Gestion des filtres ────────────────────────────────────────────────────
+  const openRedirect = (tx) => {
+    setRedirectError("");
+    setSelectedAgentId("");
+    setRedirectReason("");
+    setRedirectTransaction(tx);
+    setRedirectModalOpen(true);
+  };
+
+  // ── Gestion des filtres ───────────────────────────────────────────────────
   const handleFilterChange = (key, value) => setFilters(p => ({ ...p, [key]: value }));
   const clearFilter = (key) => setFilters(p => ({ ...p, [key]: "" }));
   const resetFilters = () => setFilters({ agent_id: "", status: "", from_date: "", to_date: "" });
@@ -390,11 +563,26 @@ export default function AdminTransactions() {
         setReason={setCancelReason}
       />
 
+      <RedirectModal
+        open={redirectModalOpen}
+        onClose={() => { setRedirectModalOpen(false); setRedirectTransaction(null); setRedirectError(""); }}
+        onConfirm={handleRedirectConfirm}
+        agents={activeAgents}
+        loading={redirectLoading}
+        transaction={redirectTransaction}
+        selectedAgentId={selectedAgentId}
+        setSelectedAgentId={setSelectedAgentId}
+        reason={redirectReason}
+        setReason={setRedirectReason}
+        error={redirectError}
+      />
+
       <TransactionDetailModal
         transaction={selectedTransaction}
         onClose={() => setSelectedTransaction(null)}
         onFinalize={(tx) => { setSelectedTransaction(null); openFinalize(tx); }}
         onCancel={(tx) => { setSelectedTransaction(null); openCancel(tx); }}
+        onRedirect={(tx) => { setSelectedTransaction(null); openRedirect(tx); }}
         actionLoading={actionLoading}
       />
 
@@ -422,7 +610,7 @@ export default function AdminTransactions() {
               <FileText size={20} className="text-indigo-600 flex-shrink-0" />
               <span className="truncate">Gestion des Transactions</span>
             </h1>
-            <p className="text-xs sm:text-sm text-gray-600 mt-1">Suivez, finalisez et gérez toutes les transactions</p>
+            <p className="text-xs sm:text-sm text-gray-600 mt-1">Suivez, finalisez, redirigez et gérez toutes les transactions</p>
           </div>
 
           <div className="flex gap-2 w-full sm:w-auto">
@@ -490,7 +678,7 @@ export default function AdminTransactions() {
                 </select>
               </div>
 
-              {/* Date début (from_date) */}
+              {/* Date début */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">Date début</label>
                 <div className="relative">
@@ -509,7 +697,7 @@ export default function AdminTransactions() {
                 </div>
               </div>
 
-              {/* Date fin (to_date) */}
+              {/* Date fin */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">Date fin</label>
                 <div className="relative">
@@ -618,6 +806,7 @@ export default function AdminTransactions() {
                   {transactions.map(t => {
                     const canFinalize = t.status === "validee";
                     const canCancel   = t.status === "en_attente" || t.status === "validee";
+                    const canRedirect = t.status === "validee";
                     return (
                       <tr key={t.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 whitespace-nowrap">
@@ -658,10 +847,15 @@ export default function AdminTransactions() {
                           </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
                             <button title="Voir les détails" onClick={() => setSelectedTransaction(t)} className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
                               <Eye size={15} />
                             </button>
+                            {canRedirect && (
+                              <button title="Rediriger vers un autre agent" onClick={() => openRedirect(t)} disabled={actionLoading !== null} className="p-1.5 rounded-lg text-indigo-500 hover:bg-indigo-50 transition-colors disabled:opacity-40">
+                                <Share2 size={15} />
+                              </button>
+                            )}
                             {canFinalize && (
                               <button title="Effectuer la transaction" onClick={() => openFinalize(t)} disabled={actionLoading !== null} className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 transition-colors disabled:opacity-40">
                                 <CheckCheck size={15} />
@@ -690,6 +884,7 @@ export default function AdminTransactions() {
             {transactions.map(t => {
               const canFinalize = t.status === "validee";
               const canCancel   = t.status === "en_attente" || t.status === "validee";
+              const canRedirect = t.status === "validee";
               return (
                 <div key={t.id} className="bg-white rounded-xl shadow-sm p-3 border border-gray-200">
                   <div className="flex justify-between items-start mb-3">
@@ -733,10 +928,16 @@ export default function AdminTransactions() {
                       <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">{t.receiver_method || "N/A"}</span>
                     </div>
                   </div>
-                  <div className="flex justify-end items-center gap-1 mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex justify-center items-center gap-1 mt-3 pt-3 border-t border-gray-100">
                     <button onClick={() => setSelectedTransaction(t)} className="p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors" title="Détails">
                       <Eye size={15} />
                     </button>
+                    {canRedirect && (
+                      <button onClick={() => openRedirect(t)} disabled={actionLoading !== null} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-indigo-600 border border-indigo-300 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-40">
+                        <Share2 size={13} />
+                        Rediriger
+                      </button>
+                    )}
                     {canFinalize && (
                       <button onClick={() => openFinalize(t)} disabled={actionLoading !== null} className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-40">
                         <CheckCheck size={13} />

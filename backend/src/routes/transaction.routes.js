@@ -17,6 +17,13 @@ router.get(
 );
 
 router.get(
+  "/my-stats",
+  verifyToken,
+  authorizeRoles("agent"),
+  controller.getMyStats
+);
+
+router.get(
   "/all",
   verifyToken,
   authorizeRoles("admin", "semi-admin"),

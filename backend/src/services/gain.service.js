@@ -76,6 +76,18 @@ const GainService = {
     const history = await GainModel.getMonthlyHistory();
     return history;
   },
+
+  async getCurrentMonthSummaryByAgent(agentId, requesterId, requesterRole) {
+    if (requesterRole === "agent" && requesterId !== agentId) {
+      throw new Error("FORBIDDEN: Vous ne pouvez voir que vos propres gains");
+    }
+    const summary = await GainModel.getCurrentMonthSummaryByAgent(agentId);
+    const totalAllCurrencies = summary.reduce((acc, curr) => acc + parseFloat(curr.total_gain), 0);
+    return {
+      total_all_currencies: totalAllCurrencies,
+      by_currency: summary,
+    };
+  },
 };
 
 module.exports = GainService;

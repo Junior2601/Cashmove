@@ -131,6 +131,27 @@ const GainController = {
       res.status(500).json({ success: false, message: error.message });
     }
   },
+
+  async getCurrentMonthSummaryByAgent(req, res) {
+    try {
+      const { agentId } = req.params;
+      const requesterId = req.user.id;
+      const requesterRole = req.user.role;
+
+      const summary = await GainService.getCurrentMonthSummaryByAgent(
+        parseInt(agentId),
+        requesterId,
+        requesterRole
+      );
+      res.json({ success: true, data: summary });
+    } catch (error) {
+      if (error.message.includes("FORBIDDEN")) {
+        return res.status(403).json({ success: false, message: error.message });
+      }
+      console.error(error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
 };
 
 module.exports = GainController;

@@ -171,6 +171,25 @@ const GainModel = {
     const result = await pool.query(query, [agentId, limit || 50, offset || 0]);
     return result.rows;
   },
+
+  async getCurrentMonthSummaryByAgent(agentId) {
+    const query = `
+      SELECT 
+        c.id as currency_id,
+        c.code,
+        c.symbol,
+        SUM(g.gain_amount) as total_gain,
+        COUNT(g.id) as transaction_count
+      FROM gains g
+      JOIN currencies c ON g.currency_id = c.id
+      WHERE g.agent_id = $1
+        AND DATE_TRUNC('month', g.created_at) = DATE_TRUNC('month', NOW())
+      GROUP BY c.id, c.code, c.symbol
+      ORDER BY total_gain DESC
+    `;
+    const result = await pool.query(query, [agentId]);
+    return result.rows;
+  },
 };
 
 module.exports = GainModel;

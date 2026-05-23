@@ -7,7 +7,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     total_transactions: 0,
     total_send_amount: 0,
-    pending_count: 0,
+    validated_count: 0,
     completed_count: 0
   });
   
@@ -89,8 +89,8 @@ export default function Dashboard() {
       setStats({
         total_transactions: statsData.total_transactions || 0,
         total_send_amount: statsData.total_send_amount || 0,
-        pending_count: statsData.pending_count || 0,
-        completed_count: statsData.completed_count || 0
+        completed_count: statsData.completed_count || 0,
+        validated_count: statsData.validated_count || 0
       });
 
       // 2. Données du graphique → GET /transactions/chart?period=...
@@ -271,7 +271,7 @@ export default function Dashboard() {
         {[
           { title: 'Total Transactions', value: stats.total_transactions.toLocaleString('fr-FR'), color: 'blue', icon: '📄', bgColor: 'bg-blue-100', borderColor: 'border-blue-500' },
           { title: 'Transactions Validées', value: stats.completed_count.toLocaleString('fr-FR'), color: 'green', icon: '✅', bgColor: 'bg-green-100', borderColor: 'border-green-500' },
-          { title: 'En Attente', value: stats.pending_count.toLocaleString('fr-FR'), color: 'yellow', icon: '⏳', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-500' },
+          { title: 'En Attente', value: stats.validated_count.toLocaleString('fr-FR'), color: 'yellow', icon: '⏳', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-500' },
           { title: 'Montant Total', value: `${stats.total_send_amount.toLocaleString('fr-FR')} €`, color: 'purple', icon: '💰', bgColor: 'bg-purple-100', borderColor: 'border-purple-500' }
         ].map((card, index) => (
           <div key={index} className={`bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg border-l-4 ${card.borderColor}`}>

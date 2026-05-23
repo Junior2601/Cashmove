@@ -202,6 +202,10 @@ const getSemiAdminShare = async (semiAdminId) => {
   return await Transaction.getSemiAdminCompletedPercentage(semiAdminId);
 };
 
+const getAgentStats = async (agentId) => {
+  return await Transaction.getStatsByAgentId(agentId);
+};
+
 const getLastFiveTransactions = async () => {
   // Réutilise la méthode existante avec limit = 5
   return await Transaction.getRecentTransactions(5);
@@ -217,6 +221,7 @@ module.exports = {
   exportTransactions,
   getTransactionCounts,
   getSemiAdminShare,
+  getAgentStats,
   getLastFiveTransactions,
 
 };

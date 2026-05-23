@@ -1,3 +1,4 @@
+// routes/history.routes.js
 const router = require("express").Router();
 
 const controller = require("../controllers/history.controller");
@@ -6,7 +7,7 @@ const {
   authorizeRoles,
 } = require("../middlewares/auth.middleware");
 
-// GET ALL (admin seulement)
+// GET ALL (admin seulement) - sans pagination
 router.get(
   "/",
   verifyToken,
@@ -14,7 +15,15 @@ router.get(
   controller.getHistory
 );
 
-// GET BY ENTITY
+// GET avec pagination et filtres (admin seulement)
+router.get(
+  "/paginated",
+  verifyToken,
+  authorizeRoles("admin"),
+  controller.getHistoryPaginated
+);
+
+// GET BY ENTITY (admin + semi-admin)
 router.get(
   "/entity/:type/:id",
   verifyToken,
@@ -22,7 +31,7 @@ router.get(
   controller.getByEntity
 );
 
-// GET BY ACTOR
+// GET BY ACTOR (admin seulement)
 router.get(
   "/actor/:actor_type/:actor_id",
   verifyToken,

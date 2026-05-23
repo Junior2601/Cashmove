@@ -14,8 +14,8 @@ export default function AgentLayout() {
   const menuItems = [
     { path: '/agent/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
     { path: '/agent/transactions', label: 'Transactions',  icon: ArrowLeftRight  },
-    { path: '/agent/historiques',  label: 'Historiques',   icon: History         },
-    { path: '/agent/balances',     label: 'Balances',      icon: Wallet          },
+    // { path: '/agent/historiques',  label: 'Historiques',   icon: History         },
+    // { path: '/agent/balances',     label: 'Balances',      icon: Wallet          },
     { path: '/agent/numbers',      label: 'Numéros',       icon: Phone           },
   ];
 

@@ -249,6 +249,24 @@ const getTransactionHistory = async (req, res) => {
   }
 };
 
+const getMyStats = async (req, res) => {
+  try {
+    const stats = await service.getAgentStats(req.user.id);
+    res.json({
+      success: true,
+      data: {
+        validated_count:      parseInt(stats.validated_count, 10),
+        completed_count:      parseInt(stats.completed_count, 10),
+        cancelled_count:      parseInt(stats.cancelled_count, 10),
+        total_send_amount:    parseFloat(stats.total_send_amount),
+        total_receive_amount: parseFloat(stats.total_receive_amount),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 const getDashboardStats = async (req, res) => {
   try {
     const stats = await service.getDashboardStats();
@@ -368,6 +386,7 @@ module.exports = {
   getMyTransactions,
   getAllTransactions,
   getTransactionHistory,
+  getMyStats,
   getDashboardStats,
   getChartData,
   getRecentTransactions,

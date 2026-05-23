@@ -891,3 +891,341 @@ BEGIN
             'amount_rub',  v_amount_in_rub
         );
     END LOOP;
+
+
+
+
+-- -------------------------------------------------------------------
+-- 1. create_redirection
+--    Appelée par l'agent (ou admin/semi-admin) qui veut rediriger
+--    une transaction vers un autre agent.
+--
+--    Paramètres :
+--      p_transaction_id  INT    — ID de la transaction à rediriger
+--      p_to_agent_id     INT    — ID de l'agent destinataire
+--      p_reason          TEXT   — Raison de la redirection (nullable)
+--      p_actor_id        INT    — ID de l'acteur (agent/admin/semi-admin)
+--      p_actor_type      TEXT   — 'agent' | 'admin' | 'semi-admin'
+--
+--    Retourne JSONB avec :
+--      redirection       — la ligne redirections créée
+--      tracking_code     — pour le sujet des emails
+--      target_agent      — { id, email } pour envoyer l'email à l'agent cible
+--      admins            — tableau [{ email }] pour notifier les admins
+-- -------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION create_redirection(
+  p_transaction_id  INT,
+  p_to_agent_id     INT,
+  p_reason          TEXT,
+  p_actor_id        INT,
+  p_actor_type      TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_tx          transactions%ROWTYPE;
+  v_target      agents%ROWTYPE;
+  v_redir       redirections%ROWTYPE;
+  v_admins      JSONB;
+BEGIN
+ 
+  -- 1. Lock la transaction NOWAIT (erreur immédiate si déjà lockée)
+  SELECT * INTO v_tx
+  FROM transactions
+  WHERE id = p_transaction_id
+  FOR UPDATE NOWAIT;
+ 
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'TRANSACTION_NOT_FOUND: Transaction introuvable';
+  END IF;
+ 
+  -- 2. Vérifier le statut
+  IF v_tx.status <> 'validee' THEN
+    RAISE EXCEPTION 'TRANSACTION_NOT_REDIRECTABLE: Transaction non redirigeable (statut: %)', v_tx.status;
+  END IF;
+ 
+  -- 3. Vérifier les droits de l'agent
+  IF p_actor_type = 'agent' AND p_actor_id <> v_tx.assigned_agent_id THEN
+    RAISE EXCEPTION 'UNAUTHORIZED: Non autorisé à rediriger cette transaction';
+  END IF;
+ 
+  -- 4. Vérifier que ce n'est pas le même agent
+  IF v_tx.assigned_agent_id = p_to_agent_id THEN
+    RAISE EXCEPTION 'SAME_AGENT: Impossible de rediriger vers le même agent';
+  END IF;
+ 
+  -- 5. Vérifier que l'agent destinataire existe et est actif
+  SELECT * INTO v_target
+  FROM agents
+  WHERE id = p_to_agent_id
+    AND is_active = true
+    AND deleted_at IS NULL;
+ 
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'AGENT_NOT_FOUND: Agent destinataire invalide ou inactif';
+  END IF;
+ 
+  -- 6. Créer la redirection
+  INSERT INTO redirections (
+    transaction_id,
+    from_agent_id,
+    to_agent_id,
+    redirected_amount,
+    reason
+  )
+  VALUES (
+    v_tx.id,
+    v_tx.assigned_agent_id,
+    p_to_agent_id,
+    v_tx.receive_amount,
+    p_reason
+  )
+  RETURNING * INTO v_redir;
+ 
+  -- 7. Logger dans history
+  INSERT INTO history (
+    action_type, actor_type, actor_id,
+    entity_type, entity_id,
+    description, metadata
+  )
+  VALUES (
+    'redirection_created',
+    p_actor_type,
+    p_actor_id,
+    'redirection',
+    v_redir.id,
+    format(
+      'Redirection de transaction %s de l''agent %s vers %s',
+      v_tx.tracking_code, v_tx.assigned_agent_id, p_to_agent_id
+    ),
+    jsonb_build_object(
+      'transaction_id', v_tx.id,
+      'from_agent',     v_tx.assigned_agent_id,
+      'to_agent',       p_to_agent_id,
+      'reason',         p_reason
+    )
+  );
+ 
+  -- 8. Collecter les emails des admins pour notification (retournés à Node.js)
+  SELECT jsonb_agg(jsonb_build_object('email', a.email, 'role', a.role))
+  INTO v_admins
+  FROM (
+    SELECT email, 'admin'      AS role FROM admins      WHERE is_active = true
+    UNION ALL
+    SELECT email, 'semi_admin' AS role FROM semi_admins WHERE is_active = true
+  ) a;
+ 
+  -- 9. Retourner tout ce qu'il faut pour les emails (hors transaction)
+  RETURN jsonb_build_object(
+    'redirection',    row_to_json(v_redir)::JSONB,
+    'tracking_code',  v_tx.tracking_code,
+    'send_amount',    v_tx.send_amount,
+    'receive_amount', v_tx.receive_amount,
+    'from_agent_id',  v_tx.assigned_agent_id,
+    'target_agent',   jsonb_build_object('id', v_target.id, 'email', v_target.email),
+    'admins',         COALESCE(v_admins, '[]'::JSONB)
+  );
+ 
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Transaction déjà en cours de traitement, réessayez dans quelques secondes';
+END;
+$$;
+ 
+ 
+-- -------------------------------------------------------------------
+-- 2. accept_redirection
+--    L'agent destinataire accepte : la transaction lui est réassignée.
+--
+--    Paramètres :
+--      p_redirection_id  INT  — ID de la redirection
+--      p_actor_id        INT  — ID de l'acteur
+--      p_actor_type      TEXT — 'agent' | 'admin' | 'semi-admin'
+-- -------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION accept_redirection(
+  p_redirection_id  INT,
+  p_actor_id        INT,
+  p_actor_type      TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_redir redirections%ROWTYPE;
+BEGIN
+ 
+  -- 1. Lock la redirection NOWAIT
+  SELECT * INTO v_redir
+  FROM redirections
+  WHERE id = p_redirection_id
+  FOR UPDATE NOWAIT;
+ 
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REDIRECTION_NOT_FOUND: Redirection introuvable';
+  END IF;
+ 
+  -- 2. Vérifier le statut
+  IF v_redir.status <> 'pending' THEN
+    RAISE EXCEPTION 'REDIRECTION_ALREADY_PROCESSED: Cette redirection a déjà été traitée';
+  END IF;
+ 
+  -- 3. Vérifier les droits
+  IF p_actor_type = 'agent' AND p_actor_id <> v_redir.to_agent_id THEN
+    RAISE EXCEPTION 'UNAUTHORIZED: Non autorisé à accepter cette redirection';
+  END IF;
+ 
+  -- 4. Mettre à jour le statut
+  UPDATE redirections
+  SET status       = 'accepted',
+      processed_at = NOW(),
+      updated_at   = NOW()
+  WHERE id = p_redirection_id;
+ 
+  -- 5. Réassigner la transaction à l'agent destinataire
+  UPDATE transactions
+  SET assigned_agent_id = v_redir.to_agent_id,
+      updated_at        = NOW()
+  WHERE id = v_redir.transaction_id;
+ 
+  -- 6. Logger
+  INSERT INTO history (
+    action_type, actor_type, actor_id,
+    entity_type, entity_id,
+    description, metadata
+  )
+  VALUES (
+    'redirection_accepted',
+    p_actor_type,
+    p_actor_id,
+    'redirection',
+    p_redirection_id,
+    format('Redirection acceptée par l''agent %s', v_redir.to_agent_id),
+    jsonb_build_object(
+      'redirection_id',  p_redirection_id,
+      'transaction_id',  v_redir.transaction_id
+    )
+  );
+ 
+  RETURN jsonb_build_object(
+    'success',        true,
+    'message',        'Redirection acceptée avec succès',
+    'transaction_id', v_redir.transaction_id
+  );
+ 
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Redirection déjà en cours de traitement, réessayez';
+END;
+$$;
+ 
+ 
+-- -------------------------------------------------------------------
+-- 3. reject_redirection
+--    L'agent destinataire refuse : la transaction reste à l'agent initial.
+--
+--    Paramètres :
+--      p_redirection_id  INT  — ID de la redirection
+--      p_actor_id        INT  — ID de l'acteur
+--      p_actor_type      TEXT — 'agent' | 'admin' | 'semi-admin'
+-- -------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION reject_redirection(
+  p_redirection_id  INT,
+  p_actor_id        INT,
+  p_actor_type      TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_redir redirections%ROWTYPE;
+BEGIN
+ 
+  -- 1. Lock NOWAIT
+  SELECT * INTO v_redir
+  FROM redirections
+  WHERE id = p_redirection_id
+  FOR UPDATE NOWAIT;
+ 
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'REDIRECTION_NOT_FOUND: Redirection introuvable';
+  END IF;
+ 
+  -- 2. Vérifier le statut
+  IF v_redir.status <> 'pending' THEN
+    RAISE EXCEPTION 'REDIRECTION_ALREADY_PROCESSED: Cette redirection a déjà été traitée';
+  END IF;
+ 
+  -- 3. Vérifier les droits
+  IF p_actor_type = 'agent' AND p_actor_id <> v_redir.to_agent_id THEN
+    RAISE EXCEPTION 'UNAUTHORIZED: Non autorisé à refuser cette redirection';
+  END IF;
+ 
+  -- 4. Mettre à jour le statut
+  UPDATE redirections
+  SET status       = 'rejected',
+      processed_at = NOW(),
+      updated_at   = NOW()
+  WHERE id = p_redirection_id;
+ 
+  -- 5. Logger
+  INSERT INTO history (
+    action_type, actor_type, actor_id,
+    entity_type, entity_id,
+    description, metadata
+  )
+  VALUES (
+    'redirection_rejected',
+    p_actor_type,
+    p_actor_id,
+    'redirection',
+    p_redirection_id,
+    format('Redirection refusée par l''agent %s', v_redir.to_agent_id),
+    jsonb_build_object(
+      'redirection_id',  p_redirection_id,
+      'transaction_id',  v_redir.transaction_id
+    )
+  );
+ 
+  RETURN jsonb_build_object(
+    'success',        true,
+    'message',        'Redirection refusée',
+    'transaction_id', v_redir.transaction_id
+  );
+ 
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Redirection déjà en cours de traitement, réessayez';
+END;
+$$;
+
+CREATE OR REPLACE VIEW v_history_details AS
+SELECT
+    h.id,
+    h.action_type,
+    h.actor_type,
+    h.actor_id,
+    h.entity_type,
+    h.entity_id,
+    h.description,
+    h.metadata,
+    h.created_at,
+    CASE
+        WHEN h.actor_type = 'admin' THEN a.name
+        WHEN h.actor_type = 'semi-admin' THEN sa.name
+        WHEN h.actor_type = 'agent' THEN ag.name
+        ELSE NULL
+    END AS actor_name,
+    CASE
+        WHEN h.actor_type = 'admin' THEN a.email
+        WHEN h.actor_type = 'semi-admin' THEN sa.email
+        WHEN h.actor_type = 'agent' THEN ag.email
+        ELSE NULL
+    END AS actor_email
+FROM history h
+LEFT JOIN admins a ON h.actor_type = 'admin' AND h.actor_id = a.id
+LEFT JOIN semi_admins sa ON h.actor_type = 'semi-admin' AND h.actor_id = sa.id
+LEFT JOIN agents ag ON h.actor_type = 'agent' AND h.actor_id = ag.id;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_created_at
+    ON history (created_at DESC);
