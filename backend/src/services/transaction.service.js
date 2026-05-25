@@ -5,9 +5,6 @@ const History = require("../models/history.model");
 const { sendEmail } = require("../utils/email");
 const { transactionCreatedTemplate } = require("../templates/emailTemplates");
 
-// Créer transaction — appel de la fonction PostgreSQL stockée
-// La fonction gère : taux, calcul montant, sélection agent aléatoire,
-// création transaction, history. Node.js envoie juste les emails après.
 const createTransactionService = async (data) => {
   let result;
   try {
@@ -38,7 +35,6 @@ const createTransactionService = async (data) => {
 
   const { transaction, agent, authorized_number } = result;
 
-  // Récupérer admins + semi-admins pour les notifs email
   const adminsRes = await db.query(
     `SELECT email, 'admin' as role FROM admins WHERE is_active = true
      UNION ALL
@@ -56,7 +52,6 @@ const createTransactionService = async (data) => {
     created_at:      transaction.created_at,
   };
 
-  // Envoi email agent
   if (agent.email) {
     await sendEmail({
       to: agent.email,
@@ -65,7 +60,6 @@ const createTransactionService = async (data) => {
     }).catch((e) => console.error("Email agent error:", e.message));
   }
 
-  // Envoi emails admins/semi-admins
   for (const admin of adminsRes.rows) {
     await sendEmail({
       to: admin.email,
@@ -81,12 +75,7 @@ const createTransactionService = async (data) => {
   };
 };
 
-// Finaliser transaction — appel de la fonction PostgreSQL stockée
-// Toute la logique (locks, balances, gains, history) est dans finalize_transaction()
-// côté DB. Node.js fait UN SEUL appel pool.query(), pas de client checkout,
-// pas de transaction multi-étapes, pas de risque de zombie.
 const finalizeTransactionService = async (transaction_id, actor) => {
-  
   let result;
   try {
     const res = await db.query(
@@ -98,7 +87,6 @@ const finalizeTransactionService = async (transaction_id, actor) => {
     const msg = error.message || "";
     console.error("❌ finalize_transaction error:", msg);
 
-    // Traduire les codes d'erreur PostgreSQL en messages lisibles
     if (msg.includes("LOCK_CONFLICT"))
       throw new Error("Transaction en cours de traitement, réessayez dans quelques secondes");
     if (msg.includes("TRANSACTION_NOT_FOUND"))
@@ -118,7 +106,6 @@ const finalizeTransactionService = async (transaction_id, actor) => {
     if (msg.includes("INSUFFICIENT_FUNDS"))
       throw new Error(msg.replace("ERROR: ", "").replace("INSUFFICIENT_FUNDS: ", "Fonds insuffisants : "));
 
-    // Log history pour les erreurs inattendues
     await History.create({
       action_type: "transaction_failed",
       actor_type: actor.type,
@@ -139,13 +126,11 @@ const finalizeTransactionService = async (transaction_id, actor) => {
   };
 };
 
-// Annuler une transaction
 const cancelTransactionService = async (transaction_id, actor, reason) => {
   const tx = await Transaction.findById(transaction_id);
 
   if (!tx) throw new Error("Transaction introuvable");
 
-  // Agents uniquement sur leurs propres transactions
   if (actor.type === "agent" && tx.assigned_agent_id !== actor.id) {
     throw new Error("Non autorisé à annuler cette transaction");
   }
@@ -157,12 +142,48 @@ const cancelTransactionService = async (transaction_id, actor, reason) => {
   return await Transaction.cancel(transaction_id, actor, reason);
 };
 
+// Créer une transaction agent (assignée directement + validée d'office)
+const createAgentTransactionService = async (agentId, data) => {
+  let result;
+  try {
+    const res = await db.query(
+      `SELECT create_agent_transaction($1, $2, $3, $4, $5, $6, $7, $8) AS result`,
+      [
+        agentId,
+        data.from_country_id,
+        data.to_country_id,
+        data.sender_phone,
+        data.receiver_phone,
+        data.sender_method_id,
+        data.receiver_method_id,
+        data.send_amount,
+      ]
+    );
+    result = res.rows[0].result;
+  } catch (error) {
+    const msg = error.message || "";
+    console.error("❌ create_agent_transaction error:", msg);
+
+    if (msg.includes("AGENT_INACTIVE"))
+      throw new Error("Agent inactif ou introuvable");
+    if (msg.includes("CURRENCIES_NOT_FOUND"))
+      throw new Error("Devises introuvables pour ces pays");
+    if (msg.includes("RATE_NOT_FOUND"))
+      throw new Error("Taux de change introuvable pour cette paire de pays");
+    if (msg.includes("LOCK_CONFLICT"))
+      throw new Error("Ressource en cours de traitement, réessayez dans quelques secondes");
+
+    throw error;
+  }
+
+  return result;
+};
+
 const getDashboardStats = async () => {
   return await Transaction.getStats();
 };
 
 const getChartData = async (period, from, to) => {
-  // Default period to 'week' if not provided
   const validPeriods = ['day', 'week', 'month'];
   let normalizedPeriod = period ? period.toLowerCase().trim() : 'week';
   
@@ -170,12 +191,10 @@ const getChartData = async (period, from, to) => {
     throw new Error('Period must be day, week, or month');
   }
 
-  // Date range: if not provided, use last 30 days
   const toDate = to ? new Date(to) : new Date();
   const fromDate = from ? new Date(from) : new Date();
   if (!from) fromDate.setDate(toDate.getDate() - 30);
 
-  // Prevent timezone shifts by resetting to UTC midnight
   const start = new Date(Date.UTC(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate()));
   const end = new Date(Date.UTC(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59));
 
@@ -207,7 +226,6 @@ const getAgentStats = async (agentId) => {
 };
 
 const getLastFiveTransactions = async () => {
-  // Réutilise la méthode existante avec limit = 5
   return await Transaction.getRecentTransactions(5);
 };
 
@@ -215,6 +233,7 @@ module.exports = {
   createTransactionService,
   finalizeTransactionService,
   cancelTransactionService,
+  createAgentTransactionService,
   getDashboardStats,
   getChartData,
   getRecentTransactions,
@@ -223,5 +242,4 @@ module.exports = {
   getSemiAdminShare,
   getAgentStats,
   getLastFiveTransactions,
-
 };

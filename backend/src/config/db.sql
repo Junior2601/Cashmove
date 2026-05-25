@@ -544,7 +544,10 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_authorized_numbers_country_method
     ON authorized_numbers (country_id, payment_method_id)
     WHERE is_active = true;
 
-
+-- Index pour accélérer les requêtes avec filtre is_active
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_countries_is_active 
+    ON countries (is_active) 
+    WHERE is_active = true;
 
 -- Optionnel : créer un déclencheur pour mettre à jour updated_at automatiquement
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -1229,3 +1232,152 @@ LEFT JOIN agents ag ON h.actor_type = 'agent' AND h.actor_id = ag.id;
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_history_created_at
     ON history (created_at DESC);
+
+-- ===================================================================
+-- FONCTION : create_agent_transaction
+-- Créée par un agent pour lui-même, directement en statut 'validee'.
+-- Pas de sélection d'agent aléatoire — l'agent est forcé à lui-même.
+-- Pas d'expiration — la transaction est déjà validée.
+-- ===================================================================
+CREATE OR REPLACE FUNCTION create_agent_transaction(
+  p_agent_id          INT,
+  p_from_country_id   INT,
+  p_to_country_id     INT,
+  p_sender_phone      VARCHAR,
+  p_receiver_phone    VARCHAR,
+  p_sender_method_id  INT,
+  p_receiver_method_id INT,
+  p_send_amount       NUMERIC
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_agent         agents%ROWTYPE;
+  v_rate          rates%ROWTYPE;
+  v_from_curr_id  INT;
+  v_to_curr_id    INT;
+  v_receive_amount NUMERIC;
+  v_auth_num      authorized_numbers%ROWTYPE;
+  v_tx            transactions%ROWTYPE;
+  v_tracking_code VARCHAR(30);
+BEGIN
+  -- 1. Vérifier que l'agent existe, est actif et peut traiter
+  SELECT * INTO v_agent FROM agents WHERE id = p_agent_id FOR UPDATE NOWAIT;
+  IF NOT FOUND OR NOT v_agent.is_active THEN
+    RAISE EXCEPTION 'AGENT_INACTIVE';
+  END IF;
+  -- IF NOT v_agent.can_process THEN
+  --   RAISE EXCEPTION 'AGENT_CANNOT_PROCESS';
+  -- END IF;
+
+  -- 2. Récupérer les devises des pays
+  SELECT cf.currency_id INTO v_from_curr_id
+  FROM countries cf WHERE cf.id = p_from_country_id;
+
+  SELECT ct.currency_id INTO v_to_curr_id
+  FROM countries ct WHERE ct.id = p_to_country_id;
+
+  IF v_from_curr_id IS NULL OR v_to_curr_id IS NULL THEN
+    RAISE EXCEPTION 'CURRENCIES_NOT_FOUND';
+  END IF;
+
+  -- 3. Récupérer le taux actif
+  SELECT * INTO v_rate
+  FROM rates
+  WHERE from_currency_id = v_from_curr_id
+    AND to_currency_id   = v_to_curr_id
+    AND is_active = true
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'RATE_NOT_FOUND';
+  END IF;
+
+  -- 4. Calculer le montant reçu
+  v_receive_amount := ROUND(p_send_amount * v_rate.rate * (1 - v_rate.commission_percent / 100), 2);
+
+  -- 5. Récupérer le numéro agréé de l'agent pour ce pays/méthode
+  SELECT * INTO v_auth_num
+  FROM authorized_numbers
+  WHERE agent_id          = p_agent_id
+    AND country_id        = p_from_country_id
+    AND payment_method_id = p_sender_method_id
+    AND is_active = true
+  LIMIT 1;
+  -- (optionnel : pas bloquant si absent)
+
+  -- 6. Générer le tracking code
+  v_tracking_code := generate_tracking_code();
+
+  -- 7. Insérer la transaction directement en statut 'validee'
+  INSERT INTO transactions (
+    tracking_code,
+    from_country_id, to_country_id,
+    sender_phone, receiver_phone,
+    sender_method_id, receiver_method_id,
+    send_amount, receive_amount,
+    rate_applied, commission_applied,
+    status,
+    assigned_agent_id,
+    authorized_number_id,
+    client_validated,
+    expires_at,
+    created_at, updated_at
+  )
+  VALUES (
+    v_tracking_code,
+    p_from_country_id, p_to_country_id,
+    p_sender_phone, p_receiver_phone,
+    p_sender_method_id, p_receiver_method_id,
+    p_send_amount, v_receive_amount,
+    v_rate.rate, v_rate.commission_percent,
+    'validee',
+    p_agent_id,
+    v_auth_num.id,   -- NULL si aucun numéro agréé trouvé
+    true,            -- validée d'office
+    NULL,            -- pas d'expiration
+    NOW(), NOW()
+  )
+  RETURNING * INTO v_tx;
+
+  -- 8. Logger dans history
+  INSERT INTO history (
+    action_type, actor_type, actor_id,
+    entity_type, entity_id,
+    description, metadata
+  )
+  VALUES (
+    'agent_transaction_created',
+    'agent', p_agent_id,
+    'transaction', v_tx.id,
+    'Transaction créée directement par l''agent',
+    jsonb_build_object(
+      'transaction_id', v_tx.id,
+      'tracking_code',  v_tracking_code,
+      'send_amount',    p_send_amount,
+      'receive_amount', v_receive_amount
+    )
+  );
+
+  -- 9. Retourner le résultat
+  RETURN jsonb_build_object(
+    'transaction', jsonb_build_object(
+      'id',              v_tx.id,
+      'tracking_code',   v_tx.tracking_code,
+      'status',          v_tx.status,
+      'send_amount',     v_tx.send_amount,
+      'receive_amount',  v_tx.receive_amount,
+      'rate_applied',    v_tx.rate_applied,
+      'commission_applied', v_tx.commission_applied,
+      'client_validated',v_tx.client_validated,
+      'created_at',      v_tx.created_at
+    ),
+    'authorized_number', v_auth_num.number
+  );
+
+EXCEPTION
+  WHEN lock_not_available THEN
+    RAISE EXCEPTION 'LOCK_CONFLICT: Ressource en cours de traitement, réessayez';
+END;
+$$;

@@ -375,44 +375,33 @@ const Transaction = {
   },
 
   expirePending: async () => {
-    const client = await db.getClient();
-
-    try {
-      await client.query("BEGIN");
-
-      const result = await client.query(`
-        UPDATE transactions
-        SET status = 'expiree',
-            updated_at = NOW()
-        WHERE status = 'en_attente'
+    // UPDATE atomique — pas besoin de transaction explicite pour un seul UPDATE
+    const result = await db.query(`
+      UPDATE transactions
+      SET status = 'expiree',
+          updated_at = NOW()
+      WHERE status = 'en_attente'
+        AND client_validated = false
+        AND expires_at IS NOT NULL
         AND expires_at < NOW()
-        RETURNING id, tracking_code
-      `);
+      RETURNING id, tracking_code
+    `);
 
-      for (const tx of result.rows) {
-        await History.create(
-          {
-            action_type: "transaction_expired",
-            actor_type: "system",
-            actor_id: null,
-            entity_type: "transaction",
-            entity_id: tx.id,
-            description: `Transaction expirée automatiquement`,
-            metadata: JSON.stringify({ transaction_id: tx.id, tracking_code: tx.tracking_code }),
-          },
-          client
-        );
-      }
+    // Historique en batch — une seule requête au lieu de N appels séquentiels
+    if (result.rows.length > 0) {
+      const values = result.rows.map((tx, i) => 
+        `('transaction_expired', 'system', NULL, 'transaction', ${tx.id}, 
+          'Transaction expirée automatiquement', 
+          '{"transaction_id": ${tx.id}, "tracking_code": "${tx.tracking_code}"}'::jsonb)`
+      ).join(', ');
 
-      await client.query("COMMIT");
-      return result.rows;
-
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+      await db.query(`
+        INSERT INTO history (action_type, actor_type, actor_id, entity_type, entity_id, description, metadata)
+        VALUES ${values}
+      `).catch(e => console.error('History insert error (non-bloquant):', e.message));
     }
+
+    return result.rows;
   },
 
   getStats: async () => {

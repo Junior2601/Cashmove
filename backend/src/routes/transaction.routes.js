@@ -3,12 +3,19 @@ const router = require("express").Router();
 const controller = require("../controllers/transaction.controller");
 const { verifyToken, authorizeRoles, optionalToken } = require("../middlewares/auth.middleware");
 
-// Routes publiques (statiques d'abord)
+// Routes publiques
 router.post("/", controller.createTransaction);
 router.get("/track/:code", controller.trackTransaction);
 router.put("/validate/:id", controller.validateTransaction);
 
-// Routes protégées - statiques
+// Routes protégées - agent
+router.post(
+  "/agent-create",
+  verifyToken,
+  authorizeRoles("agent"),
+  controller.createAgentTransaction
+);
+
 router.get(
   "/my-transactions",
   verifyToken,
@@ -23,6 +30,7 @@ router.get(
   controller.getMyStats
 );
 
+// Routes protégées - admin & semi-admin
 router.get(
   "/all",
   verifyToken,
@@ -79,7 +87,7 @@ router.get(
   controller.getSemiAdminShare
 );
 
-// Routes protégées avec paramètre id
+// Routes avec paramètre :id
 router.put(
   "/process/:id",
   verifyToken,
@@ -101,7 +109,7 @@ router.get(
   controller.getTransactionHistory
 );
 
-// Route publique pour les clients (sans auth) - doit être la dernière
-router.get('/:transaction_id', controller.getTransactionByIdController);
+// Route publique avec paramètre — doit rester en dernier
+router.get('/:transaction_id', optionalToken, controller.getTransactionByIdController);
 
 module.exports = router;

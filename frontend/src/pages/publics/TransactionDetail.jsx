@@ -112,7 +112,12 @@ export default function TransactionDetail() {
       await api.put(`/transactions/validate/${transactionId}`);
       clearInterval(timerRef.current);
       setTimeLeft(0);
+      // Réinitialiser immédiatement avant le re-fetch pour éviter
+      // que le badge "Expirée" s'affiche brièvement si le timer avait
+      // atteint 0 avant que le client clique sur Valider.
       setIsClientSideExpired(false);
+      // Forcer la réinitialisation du verrou pour permettre le re-fetch
+      fetchingRef.current = false;
       await fetchTransaction();
     } catch (err) {
       console.error('Erreur validation:', err);
@@ -143,8 +148,10 @@ export default function TransactionDetail() {
   const isCancelled = transaction?.status === 'annulee';
   const isClientValidated = transaction?.client_validated;
 
-  const shouldShowTimer          = isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0;
-  const shouldShowExpiredMessage = isClientSideExpired || isExpired;
+  const shouldShowTimer = isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0;
+  // Ne pas afficher "Expirée" si le client vient de valider (isClientValidated)
+  const shouldShowExpiredMessage =
+    (isClientSideExpired && !isClientValidated && isPending) || isExpired;
 
   if (loading) {
     return (

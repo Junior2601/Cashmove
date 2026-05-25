@@ -38,6 +38,7 @@ import AgentDashboard from "../pages/agent/Dashboard";
 import AgentTransaction from "../pages/agent/Transactions";
 import AgentRedirection from "../pages/agent/Redirections";
 import AgentNumbers from "../pages/agent/Numbers";
+import AgentCreate from "../pages/agent/Creation";
 
 export default function AppRoutes() {
   return (
@@ -102,6 +103,7 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<AgentDashboard />} />
           <Route path="transactions" element={<AgentTransaction />} />
           <Route path="redirections" element={<AgentRedirection />} />
+          <Route path="create" element={<AgentCreate />} />
           <Route path="numbers" element={<AgentNumbers />} />
         </Route>
 

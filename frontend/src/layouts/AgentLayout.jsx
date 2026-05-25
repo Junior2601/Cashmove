@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   LogOut, Menu, X, ChevronRight,
-  LayoutDashboard, ArrowLeftRight, Redo2, Wallet, Phone
+  LayoutDashboard, ArrowLeftRight, Redo2, CircleFadingPlus, Phone
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
@@ -15,7 +15,7 @@ export default function AgentLayout() {
     { path: '/agent/dashboard',    label: 'Dashboard',     icon: LayoutDashboard },
     { path: '/agent/transactions', label: 'Transactions',  icon: ArrowLeftRight  },
     { path: '/agent/redirections',  label: 'Redirections',   icon: Redo2         },
-    // { path: '/agent/balances',     label: 'Balances',      icon: Wallet          },
+    { path: '/agent/create',     label: 'Créer Transfert',      icon: CircleFadingPlus          },
     { path: '/agent/numbers',      label: 'Numéros',       icon: Phone           },
   ];
 

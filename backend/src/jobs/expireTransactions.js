@@ -1,30 +1,31 @@
 // jobs/expireTransactions.js
 const cron = require('node-cron');
 const Transaction = require('../models/transaction.model');
-const { sendEmail } = require('../utils/email');
 
-// Exécuter toutes les minutes
+let isRunning = false;  // ← empêche deux exécutions simultanées
+
 const startExpirationJob = () => {
   cron.schedule('* * * * *', async () => {
-    console.log('Running transaction expiration check...');
-    
+    if (isRunning) {
+      console.warn('⏭️  Expiration job already running, skipping...');
+      return;
+    }
+    isRunning = true;
+
     try {
-      const expiredTransactions = await Transaction.expirePending();
-      
-      if (expiredTransactions.length > 0) {
-        console.log(`${expiredTransactions.length} transactions expirées`);
-        
-        // Optionnel: Notifier les admins des transactions expirées
-        for (const tx of expiredTransactions) {
-          console.log(`Transaction expirée: ${tx.tracking_code}`);
-        }
+      const expired = await Transaction.expirePending();
+      if (expired.length > 0) {
+        console.log(`✅ ${expired.length} transaction(s) expirée(s):`, 
+          expired.map(t => t.tracking_code).join(', '));
       }
     } catch (error) {
-      console.error('Error expiring transactions:', error);
+      console.error('❌ Expiration job error:', error.message);
+    } finally {
+      isRunning = false;  // ← toujours libéré même en cas d'erreur
     }
   });
-  
-  console.log('Transaction expiration job started');
+
+  console.log('✅ Transaction expiration job started');
 };
 
 module.exports = { startExpirationJob };
