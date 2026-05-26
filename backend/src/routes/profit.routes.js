@@ -4,6 +4,7 @@ const {
   getProfit,
   getProfitHistory,
   getCurrentBalances,
+  getTransactionProfits,
   takeSnapshot,
 } = require("../controllers/profit.controller");
 const { verifyToken, authorizeRoles } = require("../middlewares/auth.middleware");
@@ -25,6 +26,8 @@ router.get("/history", getProfitHistory);
 // GET /api/profit/current
 // Balances en temps réel + profit non réalisé du jour vs snapshot start_of_day
 router.get("/current", getCurrentBalances);
+
+router.get("/transactions", getTransactionProfits);
 
 // ─── Écriture (admin uniquement) ─────────────────────────────────────────────
 

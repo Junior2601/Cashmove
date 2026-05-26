@@ -5,7 +5,6 @@ const CurrencyModel = require("../models/currency.model");
 class CountryService {
   // ✅ CREATE - sans transaction (une seule requête + vérifications simples)
   static async createCountry(data) {
-    // Vérifications d'unicité (sans transaction, risque de race condition négligeable pour un admin)
     const existingName = await CountryModel.findByName(data.name);
     if (existingName) throw new Error("Ce nom de pays existe déjà");
 
@@ -15,7 +14,6 @@ class CountryService {
     const currency = await CurrencyModel.findById(data.currency_id);
     if (!currency) throw new Error("Devise non valide");
 
-    // Insertion unique
     return await CountryModel.create(data);
   }
 
@@ -44,42 +42,40 @@ class CountryService {
     return country;
   }
 
-  // UPDATE (avec transaction)
+  // UPDATE — sans transaction explicite ni getClient()
+  // Un seul UPDATE atomique via pool.query suffit amplement ici.
   static async updateCountry(id, updateData, userRole) {
     if (userRole !== "admin") throw new Error("Accès refusé");
 
-    const client = await db.getClient();
-    try {
-      await client.query("BEGIN");
+    // 1. Récupérer l'existant via pool (pas de getClient)
+    const existing = await CountryModel.findById(id);
+    if (!existing) throw new Error("Pays non trouvé");
 
-      const existing = await CountryModel.findById(id, client);
-      if (!existing) throw new Error("Pays non trouvé");
-
-      // Unicité du nom
-      if (updateData.name && updateData.name !== existing.name) {
-        const nameConflict = await CountryModel.findByName(updateData.name, client);
-        if (nameConflict) throw new Error("Ce nom de pays existe déjà");
-      }
-      // Unicité du code
-      if (updateData.code && updateData.code !== existing.code) {
-        const codeConflict = await CountryModel.findByCode(updateData.code, client);
-        if (codeConflict) throw new Error("Ce code de pays existe déjà");
-      }
-      // Validité de la devise
-      if (updateData.currency_id && updateData.currency_id !== existing.currency_id) {
-        const currency = await CurrencyModel.findById(updateData.currency_id, client);
-        if (!currency) throw new Error("Devise non valide");
-      }
-
-      const updated = await CountryModel.update(id, updateData, client);
-      await client.query("COMMIT");
-      return updated;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
+    // 2. Vérifications d'unicité
+    if (updateData.name && updateData.name !== existing.name) {
+      const nameConflict = await CountryModel.findByName(updateData.name);
+      if (nameConflict) throw new Error("Ce nom de pays existe déjà");
     }
+    if (updateData.code && updateData.code !== existing.code) {
+      const codeConflict = await CountryModel.findByCode(updateData.code);
+      if (codeConflict) throw new Error("Ce code de pays existe déjà");
+    }
+    if (updateData.currency_id && updateData.currency_id !== existing.currency_id) {
+      const currency = await CurrencyModel.findById(updateData.currency_id);
+      if (!currency) throw new Error("Devise non valide");
+    }
+
+    // 3. Merger : ne pas écraser les champs non envoyés avec null/undefined
+    const merged = {
+      name:         updateData.name         ?? existing.name,
+      code:         updateData.code         ?? existing.code,
+      phone_prefix: updateData.phone_prefix ?? existing.phone_prefix,
+      currency_id:  updateData.currency_id  ?? existing.currency_id,
+      is_active:    updateData.is_active    ?? existing.is_active,
+    };
+
+    // 4. Un seul UPDATE atomique via pool (pas de BEGIN/COMMIT nécessaire)
+    return await CountryModel.update(id, merged);
   }
 
   // SOFT DELETE (transaction)

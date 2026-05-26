@@ -67,4 +67,25 @@ const takeSnapshot = async (req, res) => {
   }
 };
 
-module.exports = { getProfit, getProfitHistory, getCurrentBalances, takeSnapshot };
+// ─────────────────────────────────────────────────────────────────────────────
+// DANS profit.controller.js — ajouter :
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+// GET /api/profit/transactions?date=YYYY-MM-DD&limit=50
+const getTransactionProfits = async (req, res) => {
+  try {
+    const { date, limit = 50 } = req.query;
+    const data = await getTransactionProfitsService({ date, limit });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { 
+  getProfit,
+  getProfitHistory,
+  getCurrentBalances,
+  takeSnapshot,
+  getTransactionProfits
+};

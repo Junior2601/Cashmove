@@ -258,6 +258,103 @@ const getCurrentBalancesService = async () => {
   };
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFIT PAR TRANSACTION (temps réel)
+// Profit entreprise = spread de 0.20 sur le taux de change, converti en RUB
+// Pour chaque transaction "effectuee" :
+//   profit_rub = send_amount * 0.20 / (rate_applied + 0.20)
+//   (différence entre ce que l'agent récupère au taux interne vs taux client)
+// ─────────────────────────────────────────────────────────────────────────────
+ 
+const getTransactionProfitsService = async ({ date, limit = 50 }) => {
+  const targetDate = date || new Date().toISOString().split('T')[0];
+ 
+  const res = await db.query(
+    `
+    SELECT
+      t.id,
+      t.tracking_code,
+      t.send_amount,
+      t.receive_amount,
+      t.rate_applied,
+      t.commission_applied,
+      t.completed_at,
+      t.created_at,
+      -- Pays
+      cf.name             AS from_country,
+      curr_from.code      AS from_currency,
+      curr_from.symbol    AS from_symbol,
+      ct.name             AS to_country,
+      curr_to.code        AS to_currency,
+      curr_to.symbol      AS to_symbol,
+      -- Agent
+      a.name              AS agent_name,
+      -- Profit entreprise = spread 0.20 converti en RUB
+      -- send_amount est dans la devise "from" (ex: RUB ou XOF)
+      -- Si from_currency = RUB : profit = send_amount * 0.20 / (rate_applied + 0.20)
+      -- Sinon le send_amount est en devise étrangère, pas de profit direct côté from
+      CASE
+        WHEN curr_from.code = 'RUB' THEN
+          ROUND(t.send_amount * 0.20 / (t.rate_applied + 0.20), 2)
+        ELSE
+          -- Côté réception en RUB: receive_amount / rate_applied * 0.20
+          ROUND(t.receive_amount / NULLIF(t.rate_applied, 0) * 0.20, 2)
+      END AS profit_rub,
+      -- Gain agent (déjà enregistré dans gains)
+      g.gain_amount,
+      curr_gain.code AS gain_currency
+    FROM transactions t
+    JOIN countries    cf        ON cf.id = t.from_country_id
+    JOIN countries    ct        ON ct.id = t.to_country_id
+    JOIN currencies   curr_from ON curr_from.id = cf.currency_id
+    JOIN currencies   curr_to   ON curr_to.id   = ct.currency_id
+    LEFT JOIN agents  a         ON a.id = t.assigned_agent_id
+    LEFT JOIN gains   g         ON g.transaction_id = t.id
+    LEFT JOIN currencies curr_gain ON curr_gain.id = g.currency_id
+    WHERE t.status = 'effectuee'
+      AND DATE(t.completed_at) = $1::DATE
+    ORDER BY t.completed_at DESC
+    LIMIT $2
+    `,
+    [targetDate, limit]
+  );
+ 
+  const transactions = res.rows.map((row) => ({
+    id:               row.id,
+    tracking_code:    row.tracking_code,
+    from_country:     row.from_country,
+    to_country:       row.to_country,
+    from_currency:    row.from_currency,
+    from_symbol:      row.from_symbol,
+    to_currency:      row.to_currency,
+    to_symbol:        row.to_symbol,
+    send_amount:      toFloat(row.send_amount),
+    receive_amount:   toFloat(row.receive_amount),
+    rate_applied:     toFloat(row.rate_applied),
+    commission_applied: toFloat(row.commission_applied),
+    profit_rub:       toFloat(row.profit_rub),
+    gain_amount:      row.gain_amount ? toFloat(row.gain_amount) : null,
+    gain_currency:    row.gain_currency || null,
+    agent_name:       row.agent_name || '—',
+    completed_at:     row.completed_at,
+  }));
+ 
+  const totalProfitRub = transactions.reduce((s, t) => s + t.profit_rub, 0);
+  const totalGainRub   = transactions.reduce((s, t) => s + (t.gain_amount || 0), 0);
+ 
+  return {
+    date: targetDate,
+    transactions,
+    summary: {
+      count:             transactions.length,
+      total_profit_rub:  Math.round(totalProfitRub * 100) / 100,
+      total_gain_rub:    Math.round(totalGainRub * 100) / 100,
+    },
+    computed_at: new Date().toISOString(),
+  };
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -265,4 +362,5 @@ module.exports = {
   getProfitService,
   getProfitHistoryService,
   getCurrentBalancesService,
+  getTransactionProfitsService,
 };
