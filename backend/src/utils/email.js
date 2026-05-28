@@ -1,24 +1,23 @@
-// src/utils/email.js
-const transporter = require("../config/mailer");
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendEmail = async ({ to, subject, html }) => {
   if (!to) {
     console.error("Email error: No recipient provided");
     return;
   }
-
   try {
-    const info = await transporter.sendMail({
-      from: `"Move Cash" <${process.env.SMTP_USER}>`,
+    const { data, error } = await resend.emails.send({
+      from: 'Move Cash <noreply@movecash.site>',
       to,
       subject,
       html,
     });
-    console.log(`Email sent to ${to}: ${info.messageId}`);
-    return info;
+    if (error) throw new Error(error.message);
+    console.log(`✅ Email sent to ${to}: ${data.id}`);
+    return data;
   } catch (err) {
-    console.error("Email error:", err.message);
-    // Ne pas bloquer l'application si l'email échoue
+    console.error("❌ Email error:", err.message);
     return null;
   }
 };

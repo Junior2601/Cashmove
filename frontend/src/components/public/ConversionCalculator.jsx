@@ -3,59 +3,53 @@ import { Calculator, ArrowUpDown, TrendingUp, Loader } from 'lucide-react';
 import api from '../../api/axios';
 
 export default function ConversionCalculator() {
-  const [fromCountry, setFromCountry] = useState('');
-  const [toCountry, setToCountry] = useState('');
+  const [fromCurrency, setFromCurrency] = useState('');
+  const [toCurrency, setToCurrency] = useState('');
   const [amount, setAmount] = useState(1000);
   const [result, setResult] = useState({
     convertedAmount: 0,
     rate: 0,
     commissionPercent: 0.75
   });
-  const [countries, setCountries] = useState([]);
+  const [currencies, setCurrencies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchCountries();
+    fetchCurrencies();
   }, []);
 
-  // Route corrigée : GET /api/countries (retourne les pays actifs)
-  const fetchCountries = async () => {
+  // GET /api/currencies — retourne les devises actives (publique)
+  const fetchCurrencies = async () => {
     try {
       setLoading(true);
       setError('');
 
-      const response = await api.get('/countries');
-
-      // La réponse est { success, data: [...], message }
+      const response = await api.get('/currencies');
       const data = response.data.success ? response.data.data : response.data;
-      setCountries(data);
+      setCurrencies(data);
 
       if (data.length >= 2) {
-        setFromCountry(data[0].id.toString());
-        setToCountry(data[1].id.toString());
+        setFromCurrency(data[0].id.toString());
+        setToCurrency(data[1].id.toString());
       }
     } catch (err) {
-      console.error('Erreur fetchCountries:', err);
-      setError(`Impossible de charger les pays: ${err.response?.data?.message || err.message}`);
+      console.error('Erreur fetchCurrencies:', err);
+      setError(`Impossible de charger les devises: ${err.response?.data?.message || err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Route corrigée : GET /api/rates/active/pair/:from_currency_id/:to_currency_id
-  // Les currency_id sont directement dans les objets pays (champ currency_id)
-  const calculateExchange = async (amount, fromCountryId, toCountryId) => {
-    if (!fromCountryId || !toCountryId || !amount || amount <= 0) {
+  // GET /api/rates/active/pair/:from_currency_id/:to_currency_id
+  const calculateExchange = async (amount, fromCurrencyId, toCurrencyId) => {
+    if (!fromCurrencyId || !toCurrencyId || !amount || amount <= 0) {
       return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
     }
 
-    const fromCountryData = getCountryById(fromCountryId);
-    const toCountryData = getCountryById(toCountryId);
-
-    if (!fromCountryData?.currency_id || !toCountryData?.currency_id) {
-      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
+    if (fromCurrencyId === toCurrencyId) {
+      return { convertedAmount: amount, rate: 1, commissionPercent: 0 };
     }
 
     try {
@@ -63,10 +57,9 @@ export default function ConversionCalculator() {
       setError('');
 
       const response = await api.get(
-        `/rates/active/pair/${fromCountryData.currency_id}/${toCountryData.currency_id}`
+        `/rates/active/pair/${fromCurrencyId}/${toCurrencyId}`
       );
 
-      // La réponse est { success, data: { rate, commission_percent, ... } }
       if (!response.data.success) {
         throw new Error(response.data.message || 'Taux de change non disponible');
       }
@@ -75,7 +68,6 @@ export default function ConversionCalculator() {
       const rate = parseFloat(rateData.rate) || 0;
       const commissionPercent = parseFloat(rateData.commission_percent) || 0.75;
 
-      // Calcul : on déduit la commission du montant envoyé, puis on applique le taux
       const amountAfterCommission = amount * (1 - commissionPercent / 100);
       const convertedAmount = amountAfterCommission * rate;
 
@@ -95,18 +87,18 @@ export default function ConversionCalculator() {
   };
 
   useEffect(() => {
-    if (fromCountry && toCountry && amount > 0) {
-      calculateExchange(amount, fromCountry, toCountry).then(setResult);
+    if (fromCurrency && toCurrency && amount > 0) {
+      calculateExchange(amount, fromCurrency, toCurrency).then(setResult);
     }
-  }, [amount, fromCountry, toCountry, countries]);
+  }, [amount, fromCurrency, toCurrency, currencies]);
 
   const swapCurrencies = () => {
-    setFromCountry(toCountry);
-    setToCountry(fromCountry);
+    setFromCurrency(toCurrency);
+    setToCurrency(fromCurrency);
   };
 
-  const getCountryById = (id) => {
-    return countries.find(c => c.id.toString() === id.toString());
+  const getCurrencyById = (id) => {
+    return currencies.find(c => c.id.toString() === id.toString());
   };
 
   const formatCurrency = (amount, currencyCode) => {
@@ -125,16 +117,16 @@ export default function ConversionCalculator() {
     return rate.toFixed(4);
   };
 
-  const fromCountryData = getCountryById(fromCountry);
-  const toCountryData = getCountryById(toCountry);
+  const fromCurrencyData = getCurrencyById(fromCurrency);
+  const toCurrencyData = getCurrencyById(toCurrency);
 
   const commonAmounts = [500, 1000, 5000, 10000, 25000, 50000];
 
-  if (loading && countries.length === 0) {
+  if (loading && currencies.length === 0) {
     return (
       <div className="flex justify-center items-center py-12">
         <Loader className="h-8 w-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Chargement des pays...</span>
+        <span className="ml-2 text-gray-600">Chargement des devises...</span>
       </div>
     );
   }
@@ -155,7 +147,7 @@ export default function ConversionCalculator() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-700 text-sm">{error}</p>
           <button
-            onClick={fetchCountries}
+            onClick={fetchCurrencies}
             className="mt-2 text-sm text-red-600 underline hover:text-red-800"
           >
             Réessayer
@@ -166,22 +158,22 @@ export default function ConversionCalculator() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-          {/* Pays d'envoi */}
+          {/* Devise d'envoi */}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Pays d'envoi
+                Devise d'envoi
               </label>
               <select
-                value={fromCountry}
-                onChange={(e) => setFromCountry(e.target.value)}
+                value={fromCurrency}
+                onChange={(e) => setFromCurrency(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={loading}
               >
-                <option value="">Sélectionnez un pays</option>
-                {countries.map(country => (
-                  <option key={country.id} value={country.id}>
-                    {country.name} ({country.currency_symbol || country.currency_code})
+                <option value="">Sélectionnez une devise</option>
+                {currencies.map(currency => (
+                  <option key={currency.id} value={currency.id}>
+                    {currency.name} ({currency.symbol || currency.code})
                   </option>
                 ))}
               </select>
@@ -199,10 +191,10 @@ export default function ConversionCalculator() {
                   placeholder="0"
                   min="1"
                   className="w-full px-4 py-3 pr-20 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  disabled={loading || !fromCountryData}
+                  disabled={loading || !fromCurrencyData}
                 />
                 <span className="absolute right-3 top-3 text-gray-500">
-                  {fromCountryData?.currency_symbol || fromCountryData?.currency_code}
+                  {fromCurrencyData?.symbol || fromCurrencyData?.code}
                 </span>
               </div>
             </div>
@@ -213,7 +205,7 @@ export default function ConversionCalculator() {
                 <button
                   key={quickAmount}
                   onClick={() => setAmount(quickAmount)}
-                  disabled={loading || !fromCountryData}
+                  disabled={loading || !fromCurrencyData}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {quickAmount.toLocaleString()}
@@ -226,31 +218,31 @@ export default function ConversionCalculator() {
           <div className="md:flex md:items-center md:justify-center">
             <button
               onClick={swapCurrencies}
-              disabled={loading || calculating || !fromCountry || !toCountry}
+              disabled={loading || calculating || !fromCurrency || !toCurrency}
               className="w-full md:w-auto p-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowUpDown className="h-5 w-5 mx-auto" />
             </button>
           </div>
 
-          {/* Pays de réception */}
+          {/* Devise de réception */}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Pays de réception
+                Devise de réception
               </label>
               <select
-                value={toCountry}
-                onChange={(e) => setToCountry(e.target.value)}
+                value={toCurrency}
+                onChange={(e) => setToCurrency(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={loading}
               >
-                <option value="">Sélectionnez un pays</option>
-                {countries
-                  .filter(country => country.id.toString() !== fromCountry)
-                  .map(country => (
-                    <option key={country.id} value={country.id}>
-                      {country.name} ({country.currency_symbol || country.currency_code})
+                <option value="">Sélectionnez une devise</option>
+                {currencies
+                  .filter(currency => currency.id.toString() !== fromCurrency)
+                  .map(currency => (
+                    <option key={currency.id} value={currency.id}>
+                      {currency.name} ({currency.symbol || currency.code})
                     </option>
                   ))
                 }
@@ -269,8 +261,8 @@ export default function ConversionCalculator() {
                   </div>
                 ) : (
                   <span className="text-2xl font-bold text-green-600">
-                    {toCountryData
-                      ? formatCurrency(result.convertedAmount, toCountryData.currency_code)
+                    {toCurrencyData
+                      ? formatCurrency(result.convertedAmount, toCurrencyData.code)
                       : '0'}
                   </span>
                 )}
@@ -285,10 +277,10 @@ export default function ConversionCalculator() {
                   <span className="text-sm font-medium text-gray-700">Taux de change</span>
                 </div>
                 <p className="text-lg font-semibold text-gray-900">
-                  1 {fromCountryData?.currency_symbol || fromCountryData?.currency_code} ={' '}
-                  {formatRate(result.rate)} {toCountryData?.currency_symbol || toCountryData?.currency_code}
+                  1 {fromCurrencyData?.symbol || fromCurrencyData?.code} ={' '}
+                  {formatRate(result.rate)} {toCurrencyData?.symbol || toCurrencyData?.code}
                 </p>
-                {result.commissionPercent && (
+                {result.commissionPercent > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
                     Commission: {result.commissionPercent}% incluse
                   </p>
