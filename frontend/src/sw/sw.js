@@ -73,9 +73,10 @@ self.addEventListener("push", (event) => {
 
   event.waitUntil(
     (async () => {
-      // App ouverte et visible : le bandeau interne (Socket.IO) suffit, pas de doublon
+      // App ouverte et visible : le bandeau interne (Socket.IO) suffit, pas de doublon.
+      // Exception : la notification de test (bouton « Tester » des paramètres).
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      if (windows.some((w) => w.visibilityState === "visible")) return;
+      if (!data.force && windows.some((w) => w.visibilityState === "visible")) return;
 
       await self.registration.showNotification(data.title || "MoveCash", {
         body: data.body || "",

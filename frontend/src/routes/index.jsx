@@ -55,6 +55,9 @@ import AgentRedirection from "../pages/agent/Redirections";
 import AgentNumbers from "../pages/agent/Numbers";
 import AgentCreate from "../pages/agent/Creation";
 
+// Paramètres communs au personnel (notifications)
+import StaffSettings from "../pages/staff/NotificationSettings";
+
 export default function AppRoutes() {
   return (
     <BrowserRouter>
@@ -106,6 +109,7 @@ export default function AppRoutes() {
           <Route path="transactions" element={<AdminTransactions />} />
           <Route path="historiques" element={<AdminHistories />} />
           <Route path="annonces" element={<AdminAnnouncements />} />
+          <Route path="parametres" element={<StaffSettings />} />
         </Route>
 
         {/* ──────── SEMI-ADMIN ──────── */}
@@ -120,6 +124,7 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<SemiAdminDashboard />} />
           <Route path="transactions" element={<SemiAdminTransactions />} />
+          <Route path="parametres" element={<StaffSettings />} />
         </Route>
 
         {/* ──────── AGENT ──────── */}
@@ -137,6 +142,7 @@ export default function AppRoutes() {
           <Route path="redirections" element={<AgentRedirection />} />
           <Route path="create" element={<AgentCreate />} />
           <Route path="numbers" element={<AgentNumbers />} />
+          <Route path="parametres" element={<StaffSettings />} />
         </Route>
 
         {/* ──────── FALLBACK ──────── */}

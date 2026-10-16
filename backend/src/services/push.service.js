@@ -84,29 +84,102 @@ const isStaffSubscribed = async (role, staffId, endpoint) => {
   return rows.length > 0;
 };
 
+// Préférences par événement (migration 007) — colonnes autorisées uniquement
+const STAFF_EVENTS = ["new_transaction", "payment_confirmed", "redirection"];
+
 /**
  * Notifie le personnel.
  *   targets : { roles: ["admin", "semi-admin"], agentIds: [3] }
+ *   event   : "new_transaction" | "payment_confirmed" | "redirection" (préférence à respecter)
  *   build   : (role) => { title, body, link, tag } — le lien dépend de l'espace (admin, agent…)
- * Seuls les comptes actifs sont notifiés.
+ * Seuls les comptes actifs, et qui n'ont pas coupé cet événement, sont notifiés.
  */
-const sendToStaff = async ({ roles = [], agentIds = [] }, build) => {
+const sendToStaff = async ({ roles = [], agentIds = [], event = null }, build) => {
   if (!enabled || (!roles.length && !agentIds.length)) return;
+  const pref = STAFF_EVENTS.includes(event) ? `AND COALESCE(ns.${event}, true) = true` : "";
   const { rows } = await db.query(
     `SELECT s.id, s.staff_role, s.endpoint, s.p256dh, s.auth
      FROM staff_push_subscriptions s
      LEFT JOIN admins      a  ON s.staff_role = 'admin'      AND a.id  = s.staff_id
      LEFT JOIN semi_admins sa ON s.staff_role = 'semi-admin' AND sa.id = s.staff_id
      LEFT JOIN agents      ag ON s.staff_role = 'agent'      AND ag.id = s.staff_id
+     LEFT JOIN staff_notification_settings ns ON ns.staff_role = s.staff_role AND ns.staff_id = s.staff_id
      WHERE (s.staff_role = ANY($1) OR (s.staff_role = 'agent' AND s.staff_id = ANY($2)))
        AND COALESCE(a.is_active, sa.is_active, ag.is_active) = true
-       AND COALESCE(a.deleted_at, sa.deleted_at, ag.deleted_at) IS NULL`,
+       AND COALESCE(a.deleted_at, sa.deleted_at, ag.deleted_at) IS NULL
+       ${pref}`,
     [roles, agentIds.filter(Boolean)]
   );
   for (const role of STAFF_ROLES) {
     const subs = rows.filter((r) => r.staff_role === role);
     if (subs.length) await sendToSubscriptions(subs, JSON.stringify(build(role)), "staff_push_subscriptions");
   }
+};
+
+// ─── Préférences et test (page « Paramètres ») ─────────────────────────────
+
+const getStaffSettings = async (role, staffId) => {
+  const { rows } = await db.query(
+    `SELECT new_transaction, payment_confirmed, redirection
+     FROM staff_notification_settings WHERE staff_role = $1 AND staff_id = $2`,
+    [role, staffId]
+  );
+  const { rows: devices } = await db.query(
+    `SELECT COUNT(*)::INT AS n FROM staff_push_subscriptions WHERE staff_role = $1 AND staff_id = $2`,
+    [role, staffId]
+  );
+  return {
+    ...(rows[0] || { new_transaction: true, payment_confirmed: true, redirection: true }),
+    devices: devices[0].n,
+  };
+};
+
+const saveStaffSettings = async (role, staffId, body) => {
+  const current = await getStaffSettings(role, staffId);
+  const next = Object.fromEntries(
+    STAFF_EVENTS.map((e) => [e, typeof body[e] === "boolean" ? body[e] : current[e]])
+  );
+  await db.query(
+    `INSERT INTO staff_notification_settings (staff_role, staff_id, new_transaction, payment_confirmed, redirection, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (staff_role, staff_id) DO UPDATE SET
+       new_transaction = EXCLUDED.new_transaction, payment_confirmed = EXCLUDED.payment_confirmed,
+       redirection = EXCLUDED.redirection, updated_at = NOW()`,
+    [role, staffId, next.new_transaction, next.payment_confirmed, next.redirection]
+  );
+  return getStaffSettings(role, staffId);
+};
+
+// Notification de test : affichée même si l'app est ouverte (force), sur tous les appareils du compte
+const TEST_PAYLOAD = (link) =>
+  JSON.stringify({
+    title: "Notification de test",
+    body: "Les notifications MoveCash fonctionnent sur cet appareil.",
+    link,
+    tag: "movecash-test",
+    force: true,
+  });
+
+const sendStaffTest = async (role, staffId, link) => {
+  if (!enabled) throw Object.assign(new Error("Notifications push indisponibles sur le serveur"), { status: 503 });
+  const { rows } = await db.query(
+    `SELECT id, endpoint, p256dh, auth FROM staff_push_subscriptions WHERE staff_role = $1 AND staff_id = $2`,
+    [role, staffId]
+  );
+  if (!rows.length) throw Object.assign(new Error("Aucun appareil n'est abonné pour ce compte"), { status: 404 });
+  await sendToSubscriptions(rows, TEST_PAYLOAD(link), "staff_push_subscriptions");
+  return { devices: rows.length };
+};
+
+const sendClientTest = async (clientId) => {
+  if (!enabled) throw Object.assign(new Error("Notifications push indisponibles sur le serveur"), { status: 503 });
+  const { rows } = await db.query(
+    `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE client_id = $1`,
+    [clientId]
+  );
+  if (!rows.length) throw Object.assign(new Error("Aucun appareil n'est abonné pour ce compte"), { status: 404 });
+  await sendToSubscriptions(rows, TEST_PAYLOAD("/profil"));
+  return { devices: rows.length };
 };
 
 // table : où supprimer les abonnements expirés (clients ou personnel)
@@ -160,4 +233,5 @@ const sendAnnouncement = async (notificationsByClient) => {
 module.exports = {
   enabled, publicKey, subscribe, unsubscribe, sendNotification, sendAnnouncement,
   subscribeStaff, unsubscribeStaff, isStaffSubscribed, sendToStaff,
+  getStaffSettings, saveStaffSettings, sendStaffTest, sendClientTest,
 };

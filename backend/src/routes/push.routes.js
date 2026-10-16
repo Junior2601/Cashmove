@@ -62,4 +62,17 @@ router.post(
   handle(async (req) => ({ subscribed: await push.isStaffSubscribed(req.user.role, req.user.id, req.body?.endpoint) }))
 );
 
+// GET /api/push/staff/settings — préférences + nombre d'appareils abonnés
+router.get("/staff/settings", ...staffOnly, handle((req) => push.getStaffSettings(req.user.role, req.user.id)));
+
+// PUT /api/push/staff/settings  { new_transaction?, payment_confirmed?, redirection? }
+router.put("/staff/settings", ...staffOnly, handle((req) => push.saveStaffSettings(req.user.role, req.user.id, req.body || {})));
+
+// POST /api/push/staff/test — notification de test sur les appareils de ce compte
+const STAFF_HOME = { admin: "/admin/parametres", "semi-admin": "/semi-admin/parametres", agent: "/agent/parametres" };
+router.post("/staff/test", ...staffOnly, handle((req) => push.sendStaffTest(req.user.role, req.user.id, STAFF_HOME[req.user.role])));
+
+// POST /api/push/test — idem pour un client
+router.post("/test", verifyToken, authorizeRoles("client"), handle((req) => push.sendClientTest(req.user.id)));
+
 module.exports = router;

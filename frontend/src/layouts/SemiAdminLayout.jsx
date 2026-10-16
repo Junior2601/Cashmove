@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   LogOut, Menu, X, ChevronRight,
-  LayoutDashboard, ArrowLeftRight, Redo2
+  LayoutDashboard, ArrowLeftRight, Redo2, Settings
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
@@ -22,6 +22,7 @@ export default function SemiAdminLayout() {
     // { path: '/semi-admin/historiques',  label: 'Historiques',  icon: History         },
     // { path: '/semi-admin/balances',     label: 'Balances',     icon: Wallet          },
     // { path: '/semi-admin/numbers',      label: 'Numéros',      icon: Phone           },
+    { path: '/semi-admin/parametres',   label: 'Paramètres',   icon: Settings        },
   ];
 
   const isActiveLink = (path) => location.pathname === path;

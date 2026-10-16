@@ -181,6 +181,9 @@ export default function Login() {
               <Link to="/" className="block text-center text-sm text-blue-100 underline underline-offset-4">
                 Continuer sans compte
               </Link>
+              <Link to="/login" className="block text-center text-xs text-blue-200/80 hover:text-white">
+                Agent ou administrateur ? Espace professionnel
+              </Link>
             </div>
           </form>
         ) : (
@@ -267,6 +270,9 @@ export default function Login() {
               </button>
               <Link to="/" className="block text-center text-sm text-blue-100 underline underline-offset-4">
                 Continuer sans compte
+              </Link>
+              <Link to="/login" className="block text-center text-xs text-blue-200/80 hover:text-white">
+                Agent ou administrateur ? Espace professionnel
               </Link>
             </div>
           </form>

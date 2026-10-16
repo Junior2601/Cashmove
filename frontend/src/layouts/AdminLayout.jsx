@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, History, Wallet, Scale, HandCoins, TrendingUp,
-  Users, UserCog, Phone, Globe, CircleDollarSign, CreditCard, Megaphone, LogOut, Grid2x2, X,
+  Users, UserCog, Phone, Globe, CircleDollarSign, CreditCard, Megaphone, LogOut, Grid2x2, X, Settings,
 } from 'lucide-react';
 import useAuth from '../hooks/useAuth';
 import useStaffLive from '../realtime/useStaffLive';
@@ -52,6 +52,10 @@ const SECTIONS = [
   {
     title: 'Clients',
     items: [{ path: '/admin/annonces', label: 'Annonces', icon: Megaphone }],
+  },
+  {
+    title: 'Compte',
+    items: [{ path: '/admin/parametres', label: 'Paramètres', icon: Settings }],
   },
 ];
 

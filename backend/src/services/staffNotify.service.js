@@ -25,7 +25,7 @@ const transactionCreated = (tx) => {
   if (tx.status !== "en_attente") return Promise.resolve();
   return safely(
     "nouvelle transaction",
-    push.sendToStaff({ roles: ["admin", "semi-admin"], agentIds: [tx.agent_id] }, (role) => ({
+    push.sendToStaff({ roles: ["admin", "semi-admin"], agentIds: [tx.agent_id], event: "new_transaction" }, (role) => ({
       title: "Nouvelle transaction",
       body: `${fmt(tx.send_amount)} ${tx.from_currency_code} → ${fmt(tx.receive_amount)} ${tx.to_currency_code} · ${tx.sender_method} · ${tx.tracking_code}`,
       link: SPACE[role].transactions,
@@ -37,7 +37,7 @@ const transactionCreated = (tx) => {
 const paymentConfirmed = (tx) =>
   safely(
     "paiement confirmé",
-    push.sendToStaff({ agentIds: [tx.agent_id] }, (role) => ({
+    push.sendToStaff({ agentIds: [tx.agent_id], event: "payment_confirmed" }, (role) => ({
       title: "Paiement confirmé · à traiter",
       body: `${tx.tracking_code} · ${fmt(tx.send_amount)} ${tx.from_currency_code} reçus via ${tx.sender_method}. Envoyez ${fmt(tx.receive_amount)} ${tx.to_currency_code} par ${tx.receiver_method}.`,
       link: SPACE[role].transactions,
@@ -49,7 +49,7 @@ const paymentConfirmed = (tx) =>
 const redirectionCreated = (result, reason) =>
   safely(
     "redirection",
-    push.sendToStaff({ roles: ["admin", "semi-admin"], agentIds: [result.target_agent?.id] }, (role) => ({
+    push.sendToStaff({ roles: ["admin", "semi-admin"], agentIds: [result.target_agent?.id], event: "redirection" }, (role) => ({
       title: role === "agent" ? "Transaction redirigée vers vous" : "Redirection proposée",
       body: `${result.tracking_code} · ${fmt(result.receive_amount)} à payer${reason ? ` · « ${String(reason).slice(0, 80)} »` : ""}${role === "agent" ? " · acceptez ou refusez" : ""}`,
       link: SPACE[role].redirections,

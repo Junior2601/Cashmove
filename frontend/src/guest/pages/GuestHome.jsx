@@ -1,7 +1,7 @@
 // guest/pages/GuestHome.jsx — accueil des visiteurs (remplace le carrousel, cahier V2 · §5)
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Send, Search, Calculator, Headphones, Zap, ShieldCheck, TrendingUp, Check, ArrowRight, UserPlus } from "lucide-react";
+import { Send, Search, Calculator, Headphones, Zap, ShieldCheck, TrendingUp, Check, ArrowRight, UserPlus, Briefcase } from "lucide-react";
 import clientApi from "../../client/api";
 import { formatRate } from "../../client/format";
 import { InstallCard } from "../../client/components/PwaCards";
@@ -154,6 +154,13 @@ export default function GuestHome() {
           </div>
         </div>
       </section>
+
+      <p className="pb-2 text-center text-sm text-gray-500">
+        Agent ou administrateur ?{" "}
+        <Link to="/login" className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:underline">
+          <Briefcase className="h-4 w-4" /> Espace professionnel
+        </Link>
+      </p>
     </div>
   );
 }

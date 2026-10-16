@@ -62,6 +62,11 @@ export const useStaffPush = create((set) => ({
   },
 }));
 
+// Préférences par événement (page « Paramètres ») et notification de test
+export const getStaffSettings = async () => (await api.get("push/staff/settings")).data.data;
+export const saveStaffSettings = async (changes) => (await api.put("push/staff/settings", changes)).data.data;
+export const sendStaffTest = async () => (await api.post("push/staff/test")).data.data;
+
 // À monter une fois par espace (layout) : vérifie l'état de l'appareil
 export const useStaffPushInit = () => {
   const init = useStaffPush((s) => s.init);

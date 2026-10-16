@@ -37,6 +37,7 @@ function PushToggle({ client, onSaved }) {
   const [subscribed, setSubscribed] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [testInfo, setTestInfo] = useState("");
 
   useEffect(() => {
     getDeviceSubscription().then((s) => setSubscribed(!!s));
@@ -67,6 +68,28 @@ function PushToggle({ client, onSaved }) {
         onChange={change}
       />
       {error && <p className="pb-2 text-sm text-red-600">{error}</p>}
+      {support === "ok" && !!client?.push_enabled && !!subscribed && (
+        <div className="pb-3">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              setError("");
+              setTestInfo("");
+              try {
+                await clientApi.post("push/test");
+                setTestInfo("Notification de test envoyée.");
+              } catch (err) {
+                setError(apiError(err));
+              }
+            }}
+            className="text-sm font-semibold text-blue-700 underline-offset-4 hover:underline dark:text-blue-400"
+          >
+            Envoyer une notification de test
+          </button>
+          {testInfo && <p className="mt-1 text-sm text-emerald-700">{testInfo}</p>}
+        </div>
+      )}
     </div>
   );
 }

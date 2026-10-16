@@ -60,6 +60,7 @@ const MARKERS = {
   "004_v2_announcements.sql": `SELECT to_regclass('public.announcements') IS NOT NULL`,
   "005_staff_push.sql": `SELECT to_regclass('public.staff_push_subscriptions') IS NOT NULL`,
   "006_profit_rules.sql": `SELECT to_regclass('public.transaction_profits') IS NOT NULL`,
+  "007_notification_settings.sql": `SELECT to_regclass('public.staff_notification_settings') IS NOT NULL`,
 };
 
 const ask = (q) =>
