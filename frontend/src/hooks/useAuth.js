@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { disableStaffPush } from "../pwa/staffPush";
 
 /**
  * useAuth — hook utilitaire pour lire la session et se déconnecter.
@@ -26,7 +27,9 @@ function useAuth() {
     // JSON corrompu — on ignore
   }
  
-  const logout = () => {
+  const logout = async () => {
+    // Cet appareil ne doit plus recevoir les notifications de ce compte (max 1,5 s)
+    await Promise.race([disableStaffPush(), new Promise((r) => setTimeout(r, 1500))]).catch(() => {});
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     navigate("/login", { replace: true });

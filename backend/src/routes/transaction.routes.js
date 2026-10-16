@@ -4,7 +4,7 @@ const controller = require("../controllers/transaction.controller");
 const { verifyToken, authorizeRoles, optionalToken } = require("../middlewares/auth.middleware");
 
 // Routes publiques
-router.post("/", controller.createTransaction);
+router.post("/", optionalToken, controller.createTransaction);
 router.get("/track/:code", controller.trackTransaction);
 router.put("/validate/:id", controller.validateTransaction);
 

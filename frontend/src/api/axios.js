@@ -1,7 +1,8 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "http://localhost:4000/api/",
+  // VITE_API_URL=/api/ en développement local (proxy Vite), sinon l'API de production
+  baseURL: import.meta.env.VITE_API_URL || "https://api.movecash.site/api/",
 });
 
 api.interceptors.request.use((config) => {

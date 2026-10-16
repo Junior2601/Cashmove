@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../api/axios';
+import useTrackingLive from '../../realtime/useTrackingLive';
 import { Clock, User, Phone, CreditCard, CheckCircle, AlertCircle, Copy, ArrowLeft } from 'lucide-react';
 import { decryptId } from '../../utils/encryption';
 
@@ -30,12 +31,13 @@ export default function TransactionDetail() {
   };
 
   // Charger la transaction — stable grâce à useCallback + fetchingRef
-  const fetchTransaction = useCallback(async () => {
+  // silent : mise à jour en direct, sans repasser par l'écran de chargement
+  const fetchTransaction = useCallback(async (silent = false) => {
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const transactionId = getDecryptedId();
       if (!transactionId) {
         setError('ID de transaction invalide');
@@ -73,6 +75,9 @@ export default function TransactionDetail() {
   useEffect(() => {
     fetchTransaction();
   }, [fetchTransaction]);
+
+  // Suivi en direct sans compte (cahier V2 · trx:subscribe)
+  useTrackingLive(transaction?.tracking_code, () => fetchTransaction(true));
 
   // Timer — tourne seulement si timeLeft est un nombre > 0
   useEffect(() => {
@@ -141,11 +146,13 @@ export default function TransactionDetail() {
     }).format(amount);
   };
 
-  const isExpired   = transaction?.status === 'expiree';
+  const isPending   = transaction?.status === 'en_attente';
+  const isValidated = transaction?.status === 'validee';  // <-- AJOUTÉ
   const isCompleted = transaction?.status === 'effectuee';
   const isFailed    = transaction?.status === 'echouee';
-  const isPending   = transaction?.status === 'en_attente';
   const isCancelled = transaction?.status === 'annulee';
+  const isExpired   = transaction?.status === 'expiree';
+
   const isClientValidated = transaction?.client_validated;
 
   const shouldShowTimer = isPending && !isClientValidated && !isClientSideExpired && timeLeft > 0;
@@ -208,16 +215,19 @@ export default function TransactionDetail() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">Statut du transfert</h2>
                 <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  isPending   ? 'bg-yellow-100 text-yellow-800' :
-                  isCompleted ? 'bg-green-100 text-green-800'  :
-                  isFailed    ? 'bg-red-100 text-red-800'      :
-                  isCancelled ? 'bg-gray-100 text-gray-800'    :
-                                'bg-red-50 text-red-700'
+                  isPending ? 'bg-yellow-100 text-yellow-800' :
+                  isValidated ? 'bg-blue-100 text-blue-800' :
+                  isCompleted ? 'bg-green-100 text-green-800' :
+                  isFailed ? 'bg-red-100 text-red-800' :
+                  isCancelled ? 'bg-gray-100 text-gray-800' :
+                  'bg-red-50 text-red-700'
                 }`}>
-                  {isPending   ? (isClientValidated ? 'Validée – en attente agent' : 'En attente') :
-                   isCompleted ? 'Effectuée'  :
-                   isFailed    ? 'Échouée'    :
-                   isCancelled ? 'Annulée'    : 'Expirée'}
+                  {isPending ? (isClientValidated ? 'Validée – en attente agent' : 'En attente') :
+                   isValidated ? 'Validée – en attente agent' :
+                   isCompleted ? 'Effectuée' :
+                   isFailed ? 'Échouée' :
+                   isCancelled ? 'Annulée' :
+                   'Expirée'}
                 </div>
               </div>
 
@@ -394,7 +404,7 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {isClientValidated && isPending && (
+            {isClientValidated && (isPending || isValidated) && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-6">
                 <div className="text-center">
                   <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-3" />
@@ -416,11 +426,11 @@ export default function TransactionDetail() {
               </div>
             )}
 
-            {(isCompleted || isFailed || (isExpired && !isPending)) && (
+            {(isCompleted || isFailed || isExpired) && (
               <div className={`rounded-xl p-6 ${
                 isCompleted ? 'bg-green-50 border border-green-200' :
-                isFailed    ? 'bg-red-50 border border-red-200'    :
-                              'bg-gray-50 border border-gray-200'
+                isFailed ? 'bg-red-50 border border-red-200' :
+                'bg-gray-50 border border-gray-200'
               }`}>
                 <div className="text-center">
                   {isCompleted ? (
@@ -431,8 +441,8 @@ export default function TransactionDetail() {
                   <h3 className={`text-lg font-semibold mb-2 ${
                     isCompleted ? 'text-green-900' : 'text-red-900'
                   }`}>
-                    {isCompleted ? 'Transfert réussi !'   :
-                     isFailed    ? 'Transfert échoué'     : 'Transfert expiré'}
+                    {isCompleted ? 'Transfert réussi !' :
+                     isFailed ? 'Transfert échoué' : 'Transfert expiré'}
                   </h3>
                   <p className={`text-sm ${isCompleted ? 'text-green-700' : 'text-red-700'}`}>
                     {isCompleted

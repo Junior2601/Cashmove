@@ -98,7 +98,52 @@ const redirectionTemplate = (data) => {
   `;
 };
 
+// Code de connexion client V2 (CPT-01/02). Styles en ligne : les clients mail
+// (Gmail notamment) ignorent souvent les balises <style>.
+const loginCodeTemplate = ({ code, first_name, is_new, language = "fr" }) => {
+  const en = language === "en";
+  const greeting = first_name
+    ? (en ? `Hello ${first_name},` : `Bonjour ${first_name},`)
+    : (en ? "Hello," : "Bonjour,");
+  const intro = is_new
+    ? (en ? "Here is your code to confirm your email and create your MoveCash account:"
+          : "Voici votre code pour confirmer votre e-mail et créer votre compte MoveCash :")
+    : (en ? "Here is your code to sign in to MoveCash:"
+          : "Voici votre code pour vous connecter à MoveCash :");
+  const expiry = en ? "This code expires in 10 minutes." : "Ce code expire dans 10 minutes.";
+  const warning = en
+    ? "Never share this code. MoveCash will never ask you for it. If you did not request it, you can ignore this email."
+    : "Ne communiquez jamais ce code. MoveCash ne vous le demandera jamais. Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.";
+
+  return `
+    <!DOCTYPE html>
+    <html lang="${en ? "en" : "fr"}">
+    <body style="margin:0;padding:0;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6fb;padding:32px 16px;">
+        <tr><td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:16px;overflow:hidden;">
+            <tr><td style="background:#1d4ed8;padding:24px;text-align:center;">
+              <span style="font-size:24px;font-weight:bold;color:#ffffff;">Move</span><span style="font-size:24px;font-weight:bold;color:#facc15;">Cash</span>
+            </td></tr>
+            <tr><td style="padding:32px 28px;">
+              <p style="margin:0 0 12px;font-size:16px;">${greeting}</p>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.5;">${intro}</p>
+              <div style="text-align:center;margin:0 0 24px;">
+                <span style="display:inline-block;padding:16px 24px;background:#eff6ff;border:2px dashed #1d4ed8;border-radius:12px;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">${code}</span>
+              </div>
+              <p style="margin:0 0 8px;font-size:14px;color:#4b5563;">${expiry}</p>
+              <p style="margin:0;font-size:13px;line-height:1.5;color:#6b7280;">${warning}</p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>
+  `;
+};
+
 module.exports = {
   transactionCreatedTemplate,
-  redirectionTemplate
+  redirectionTemplate,
+  loginCodeTemplate
 };

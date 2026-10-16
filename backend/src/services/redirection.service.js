@@ -11,8 +11,7 @@
 //   3. Parser les erreurs métier remontées par RAISE EXCEPTION
 
 const db = require("../config/db");
-const { sendEmail } = require("../utils/email");
-const { redirectionTemplate } = require("../templates/emailTemplates");
+const staffNotify = require("./staffNotify.service");
 
 // ─── Parseur d'erreurs métier ──────────────────────────────────────────────
 // Les fonctions SQL lèvent des exceptions sous la forme "CODE: message".
@@ -61,32 +60,8 @@ const createRedirectionService = async (data, actor) => {
     throw parseDbError(err);
   }
 
-  // DB a commité — emails en fire-and-forget (n'impactent pas la réponse HTTP)
-  const emailData = {
-    tracking_code:  result.tracking_code,
-    amount:         result.receive_amount,
-    from_agent_id:  result.from_agent_id,
-    to_agent_id:    data.to_agent_id,
-    reason:         data.reason,
-    redirection_id: result.redirection.id,
-  };
-
-  Promise.all([
-    sendEmail({
-      to:      result.target_agent.email,
-      subject: `Redirection de transaction - ${result.tracking_code}`,
-      html:    redirectionTemplate({ ...emailData, recipient_type: "agent" }),
-    }),
-    ...result.admins.map((admin) =>
-      sendEmail({
-        to:      admin.email,
-        subject: `Redirection créée - ${result.tracking_code}`,
-        html:    redirectionTemplate({ ...emailData, recipient_type: admin.role }),
-      })
-    ),
-  ]).catch((emailErr) => {
-    console.error("⚠️  Erreur envoi email redirection (non bloquant):", emailErr.message);
-  });
+  // DB a commité — notification push au personnel (remplace les e-mails), sans bloquer la réponse
+  staffNotify.redirectionCreated(result, data.reason);
 
   return {
     ...result.redirection,

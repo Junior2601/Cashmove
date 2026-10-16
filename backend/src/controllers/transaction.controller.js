@@ -5,7 +5,8 @@ const History = require("../models/history.model");
 
 const createTransaction = async (req, res) => {
   try {
-    const tx = await service.createTransactionService(req.body);
+    const clientId = req.user?.role === "client" ? req.user.id : null;
+    const tx = await service.createTransactionService(req.body, clientId);
     res.status(201).json({
       success: true,
       data: {
@@ -14,6 +15,7 @@ const createTransaction = async (req, res) => {
         agent_name: tx.agent_name,
         expires_at: tx.expires_at,
         tracking_code: tx.tracking_code,
+        suggest_save_beneficiary: tx.suggest_save_beneficiary,
       },
     });
   } catch (err) {
@@ -52,6 +54,9 @@ const getTransactionByIdController = async (req, res) => {
       hasAccess = true;
     } else if (user.role === 'agent') {
       hasAccess = transaction.assigned_agent_id === user.id;
+    } else if (user.role === 'client') {
+      // Client V2 : ses propres transactions, et celles faites en invité (lien public)
+      hasAccess = transaction.client_id == null || transaction.client_id === user.id;
     } else {
       hasAccess = false;
     }

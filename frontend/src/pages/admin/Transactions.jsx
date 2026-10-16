@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import api from "../../api/axios";
+import useStaffLive from "../../realtime/useStaffLive";
+import LiveNotice from "../../realtime/LiveNotice";
 import {
   Search,
   Filter,
@@ -27,15 +30,51 @@ import {
   Ban,
   Loader2,
   Share2,
-  Copy
+  Copy,
+  CornerDownRight,
 } from "lucide-react";
+
+// ─── Enveloppe commune des modales ───────────────────────────────────────────
+function ModalShell({ open, onClose, children }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto overscroll-contain"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div className="w-full max-w-md my-auto" onMouseDown={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // ─── Modal de confirmation ───────────────────────────────────────────────────
 function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel, confirmColor, loading, reasonRequired, reason, setReason }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+    <ModalShell open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-6 border border-gray-100">
         <div className="flex items-start gap-3 mb-4">
           <AlertCircle size={22} className={confirmColor === "red" ? "text-red-500 flex-shrink-0 mt-0.5" : "text-green-500 flex-shrink-0 mt-0.5"} />
           <div>
@@ -81,16 +120,15 @@ function ConfirmModal({ open, onClose, onConfirm, title, message, confirmLabel, 
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
 // ─── Modal de redirection ────────────────────────────────────────────────────
 function RedirectModal({ open, onClose, onConfirm, agents, loading, transaction, selectedAgentId, setSelectedAgentId, reason, setReason, error }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+    <ModalShell open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-6 border border-gray-100">
         <div className="flex items-start gap-3 mb-4">
           <Share2 size={22} className="text-indigo-500 flex-shrink-0 mt-0.5" />
           <div>
@@ -159,18 +197,216 @@ function RedirectModal({ open, onClose, onConfirm, agents, loading, transaction,
           </button>
         </div>
       </div>
+    </ModalShell>
+  );
+}
+
+// ─── Helpers frais ───────────────────────────────────────────────────────────
+const num = (v) => {
+  const n = Number(v);
+  return isNaN(n) ? 0 : n;
+};
+
+const hasWithdrawalFee = (tx) =>
+  !!tx && num(tx.withdrawal_fee_percent) > 0 && num(tx.withdrawal_fee_amount) > 0;
+
+const hasSendingFee = (tx) =>
+  !!tx && num(tx.sending_fee_percent) > 0 && num(tx.sending_fee_amount) > 0;
+
+const hasAnyFee = (tx) => hasWithdrawalFee(tx) || hasSendingFee(tx);
+
+// ─── Helpers redirection ─────────────────────────────────────────────────────
+const isRedirected = (tx) => {
+  if (!tx) return false;
+  if (tx.is_redirected === true) return true;
+  if (tx.redirection_status === "accepted") return true;
+  if (tx.origin_agent_id && tx.agent_id && tx.origin_agent_id !== tx.agent_id) return true;
+  return false;
+};
+
+const isPendingRedirection = (tx) =>
+  !!tx && tx.redirection_status === "pending" && !isRedirected(tx);
+
+const getOriginAgentName = (tx) =>
+  tx?.origin_agent_name || tx?.from_agent_name || (tx?.origin_agent_id ? `Agent #${tx.origin_agent_id}` : null);
+
+const getPayoutAgentName = (tx) =>
+  tx?.payout_agent_name || tx?.agent_name || (tx?.payout_agent_id ? `Agent #${tx.payout_agent_id}` : null);
+
+// ─── Composant : badge de frais ──────────────────────────────────────────────
+function FeesBadges({ tx, size = "sm" }) {
+  if (!tx) return null;
+
+  const isSmall = size === "sm";
+  const padding = isSmall ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs";
+  const iconSize = isSmall ? 9 : 11;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {hasWithdrawalFee(tx) && (
+        <span
+          className={`inline-flex items-center gap-1 rounded bg-amber-100 text-amber-800 font-medium border border-amber-200 ${padding}`}
+          title={`Frais de retrait payé par le client — ${fmtPercent(tx.withdrawal_fee_percent)} % de ${fmt(tx.send_amount)} ${tx.from_currency_code || ""}`}
+        >
+          <User size={iconSize} />
+          Retrait {fmtPercent(tx.withdrawal_fee_percent)}%
+        </span>
+      )}
+
+      {hasSendingFee(tx) && (
+        <span
+          className={`inline-flex items-center gap-1 rounded bg-indigo-100 text-indigo-800 font-medium border border-indigo-200 ${padding}`}
+          title={`Frais d'envoi payé par l'agent — ${fmtPercent(tx.sending_fee_percent)} % de ${fmt(tx.receive_amount)} ${tx.to_currency_code || ""}`}
+        >
+          <CreditCard size={iconSize} />
+          Envoi {fmtPercent(tx.sending_fee_percent)}%
+        </span>
+      )}
+
+      {!hasAnyFee(tx) && (
+        <span className={`inline-flex items-center gap-1 rounded bg-gray-100 text-gray-500 border border-gray-200 ${padding}`}>
+          Aucun frais
+        </span>
+      )}
     </div>
   );
 }
 
-// ─── Modal de détail (centré) ────────────────────────────────────────────────
+// ─── Composant : badge redirection (compact) ─────────────────────────────────
+function RedirectionBadge({ tx, size = "sm" }) {
+  if (!isRedirected(tx)) return null;
+
+  const isSmall = size === "sm";
+  const padding = isSmall ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs";
+  const iconSize = isSmall ? 9 : 11;
+  const origin = getOriginAgentName(tx);
+  const payout = getPayoutAgentName(tx);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded bg-violet-100 text-violet-800 font-medium border border-violet-200 ${padding}`}
+      title={`Transaction redirigée : de ${origin || "—"} vers ${payout || "—"}`}
+    >
+      <Share2 size={iconSize} />
+      <span className="truncate max-w-[110px]">
+        {origin ? `De ${origin}` : "Redirigée"}
+      </span>
+      <ArrowRight size={iconSize - 2} />
+      <span className="truncate max-w-[110px]">
+        {payout || "—"}
+      </span>
+    </span>
+  );
+}
+
+// ─── Composant : bloc redirection (détaillé, dans la modale) ────────────────
+function RedirectionBlock({ tx }) {
+  if (!isRedirected(tx)) return null;
+
+  const origin = getOriginAgentName(tx);
+  const payout = getPayoutAgentName(tx);
+  const originEmail = tx?.origin_agent_email;
+  const payoutEmail = tx?.payout_agent_email;
+
+  return (
+    <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 space-y-2">
+      <p className="text-xs font-semibold flex items-center gap-1 text-violet-800">
+        <Share2 size={12} />
+        Transaction redirigée
+      </p>
+
+      <div className="flex items-center gap-2 text-xs">
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] text-violet-600 uppercase tracking-wide font-medium">Agent d'origine</p>
+          <p className="font-semibold text-violet-900 truncate">{origin || "—"}</p>
+          {originEmail && <p className="text-[10px] text-violet-600 truncate">{originEmail}</p>}
+        </div>
+
+        <ArrowRight size={14} className="text-violet-400 flex-shrink-0" />
+
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] text-violet-600 uppercase tracking-wide font-medium">Agent payeur</p>
+          <p className="font-semibold text-violet-900 truncate">{payout || "—"}</p>
+          {payoutEmail && <p className="text-[10px] text-violet-600 truncate">{payoutEmail}</p>}
+        </div>
+      </div>
+
+      {tx.redirection_reason && (
+        <div className="pt-1 border-t border-violet-200">
+          <p className="text-[10px] text-violet-600 uppercase tracking-wide font-medium mb-0.5">Raison</p>
+          <p className="text-xs text-violet-900 italic break-words">« {tx.redirection_reason} »</p>
+        </div>
+      )}
+
+      {tx.redirection_processed_at && (
+        <p className="text-[10px] text-violet-600 pt-1">
+          Acceptée le {fmtDate(tx.redirection_processed_at)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Bloc détail des frais ──────────────────────────────────────────────────
+function FeesDetailBlock({ tx }) {
+  if (!tx) return null;
+
+  const hasW = hasWithdrawalFee(tx);
+  const hasS = hasSendingFee(tx);
+
+  return (
+    <div className={`border rounded-lg p-3 space-y-2 ${
+      hasAnyFee(tx) ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"
+    }`}>
+      <p className={`text-xs font-semibold flex items-center gap-1 ${
+        hasAnyFee(tx) ? "text-amber-800" : "text-gray-600"
+      }`}>
+        <CreditCard size={12} />
+        Détail des frais
+      </p>
+
+      {!hasAnyFee(tx) && (
+        <p className="text-xs text-gray-500 italic">Aucun frais appliqué sur cette transaction.</p>
+      )}
+
+      {hasW && (
+        <div className="flex justify-between items-start text-xs gap-2">
+          <span className="text-amber-700 flex items-center gap-1 flex-shrink-0">
+            <User size={11} />
+            Frais de retrait <span className="text-[10px] italic">(payé par le client)</span>
+          </span>
+          <span className="font-medium text-amber-900 text-right whitespace-nowrap">
+            {fmtPercent(tx.withdrawal_fee_percent)} % — {fmt(tx.withdrawal_fee_amount)} {tx.from_currency_code}
+          </span>
+        </div>
+      )}
+
+      {hasS && (
+        <div className="flex justify-between items-start text-xs gap-2">
+          <span className="text-indigo-700 flex items-center gap-1 flex-shrink-0">
+            <CreditCard size={11} />
+            Frais d'envoi <span className="text-[10px] italic">(payé par l'agent)</span>
+          </span>
+          <span className="font-medium text-indigo-900 text-right whitespace-nowrap">
+            {fmtPercent(tx.sending_fee_percent)} % — {fmt(tx.sending_fee_amount)} {tx.to_currency_code}
+          </span>
+        </div>
+      )}
+
+      {hasS && (
+        <div className="flex justify-between text-xs pt-1 border-t border-amber-200">
+          <span className="text-amber-800 font-medium">Total débité au solde agent</span>
+          <span className="font-semibold text-amber-900">
+            {fmt(tx.total_debit_amount)} {tx.to_currency_code}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Modal de détail ─────────────────────────────────────────────────────────
 function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, onRedirect, actionLoading }) {
-  if (!transaction) return null;
-
-  const canFinalize = transaction.status === "validee";
-  const canCancel   = transaction.status === "en_attente" || transaction.status === "validee";
-  const canRedirect = transaction.status === "validee";
-
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = (text) => {
@@ -180,9 +416,16 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, on
     }).catch(err => console.error("Erreur copie :", err));
   };
 
+  if (!transaction) return null;
+
+  const canFinalize = transaction.status === "validee";
+  const canCancel   = transaction.status === "en_attente" || transaction.status === "validee";
+  const canRedirect = transaction.status === "validee" && !isRedirected(transaction);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden border border-gray-100">
+    <ModalShell open={!!transaction} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] overflow-hidden border border-gray-100 flex flex-col">
+        {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center gap-2 min-w-0">
             <FileText size={15} className="text-indigo-600 flex-shrink-0" />
@@ -193,16 +436,55 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, on
           </button>
         </div>
 
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        {/* Body */}
+        <div className="p-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
+
+          {/* Bloc redirection — affiché uniquement si redirigée */}
+          <RedirectionBlock tx={transaction} />
+
+          {/* Bloc pays */}
           <div className="grid grid-cols-2 gap-3">
             <InfoItem label="De" value={transaction.from_country} />
             <InfoItem label="Vers" value={transaction.to_country} />
-            <InfoItem label="Montant envoyé" value={`${fmt(transaction.send_amount)} ${transaction.from_currency_code || ''}`} />
-            <InfoItem label="Montant reçu" value={`${fmt(transaction.receive_amount)} ${transaction.to_currency_code || ''}`} />
+          </div>
+
+          {/* Bloc montants */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+            <p className="text-xs font-semibold text-gray-700 flex items-center gap-1">
+              <DollarSign size={12} className="text-green-600" />
+              Montants
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <InfoItem
+                label="Montant envoyé"
+                value={`${fmt(transaction.send_amount)} ${transaction.from_currency_code || ""}`}
+              />
+              <InfoItem
+                label="Montant net envoyé"
+                value={`${fmt(transaction.net_send_amount)} ${transaction.from_currency_code || ""}`}
+              />
+              <InfoItem
+                label="Montant reçu"
+                value={`${fmt(transaction.receive_amount)} ${transaction.to_currency_code || ""}`}
+              />
+              {hasSendingFee(transaction) && (
+                <InfoItem
+                  label="Solde agent débité"
+                  value={`${fmt(transaction.total_debit_amount)} ${transaction.to_currency_code || ""}`}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Bloc frais */}
+          <FeesDetailBlock tx={transaction} />
+
+          {/* Bloc moyens de paiement & coordonnées */}
+          <div className="grid grid-cols-2 gap-3">
             <InfoItem label="Méthode envoi" value={transaction.sender_method} />
             <InfoItem label="Méthode réception" value={transaction.receiver_method} />
             <InfoItem label="Tél. expéditeur" value={transaction.sender_phone} />
-            {/* Champ destinataire avec copie */}
+
             <div>
               <p className="text-xs text-gray-400 mb-0.5">Tél. destinataire</p>
               <div className="flex items-center gap-1.5">
@@ -218,13 +500,21 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, on
                 )}
               </div>
             </div>
-            <InfoItem label="Agent" value={transaction.agent_name} />
+
+            <InfoItem
+              label={isRedirected(transaction) ? "Agent payeur (après redirection)" : "Agent"}
+              value={getPayoutAgentName(transaction)}
+            />
+            {isRedirected(transaction) && (
+              <InfoItem label="Agent d'origine" value={getOriginAgentName(transaction)} />
+            )}
             <InfoItem label="Numéro autorisé" value={transaction.authorized_number} />
             <InfoItem label="Statut" value={translateStatus(transaction.status)} colored status={transaction.status} />
             <InfoItem label="Créée le" value={fmtDate(transaction.created_at)} />
           </div>
         </div>
 
+        {/* Footer actions */}
         {(canFinalize || canCancel || canRedirect) && (
           <div className="flex justify-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50">
             {canCancel && (
@@ -260,7 +550,7 @@ function TransactionDetailModal({ transaction, onClose, onFinalize, onCancel, on
           </div>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -273,7 +563,7 @@ function InfoItem({ label, value, colored, status }) {
           {value}
         </span>
       ) : (
-        <p className="text-sm font-medium text-gray-800">{value || "—"}</p>
+        <p className="text-sm font-medium text-gray-800 break-words">{value || "—"}</p>
       )}
     </div>
   );
@@ -281,8 +571,13 @@ function InfoItem({ label, value, colored, status }) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const fmt = (amount) => {
-  if (!amount || isNaN(amount)) return "0.00";
+  if (amount === null || amount === undefined || isNaN(amount)) return "0,00";
   return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+};
+
+const fmtPercent = (val) => {
+  if (val === null || val === undefined || isNaN(val)) return "0,00";
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 };
 
 const fmtDate = (d) => {
@@ -348,7 +643,6 @@ export default function AdminTransactions() {
 
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0, limit: 10 });
 
-  // Filtres
   const [filters, setFilters] = useState({
     agent_id: "",
     status: "",
@@ -359,7 +653,6 @@ export default function AdminTransactions() {
   const [showFilters, setShowFilters]             = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-  // États pour la redirection
   const [activeAgents, setActiveAgents] = useState([]);
   const [redirectModalOpen, setRedirectModalOpen] = useState(false);
   const [redirectTransaction, setRedirectTransaction] = useState(null);
@@ -368,12 +661,10 @@ export default function AdminTransactions() {
   const [redirectLoading, setRedirectLoading] = useState(false);
   const [redirectError, setRedirectError] = useState("");
 
-  // Modales finalisation / annulation
   const [finalizeModal, setFinalizeModal] = useState({ open: false, transaction: null });
   const [cancelModal, setCancelModal]     = useState({ open: false, transaction: null });
   const [cancelReason, setCancelReason]   = useState("");
 
-  // Charger les agents actifs (admin & semi-admin peuvent les voir)
   const fetchActiveAgents = useCallback(async () => {
     try {
       const res = await api.get("/agents/staff/active");
@@ -385,7 +676,6 @@ export default function AdminTransactions() {
     }
   }, []);
 
-  // Charger les transactions
   const fetchTransactions = useCallback(async (page = 1) => {
     setLoading(true);
     setError(null);
@@ -427,7 +717,6 @@ export default function AdminTransactions() {
     }
   }, [filters, pagination.limit]);
 
-  // Rechargement initial et lors des changements de filtres
   useEffect(() => {
     const timer = setTimeout(() => {
       setPagination(p => ({ ...p, page: 1 }));
@@ -436,11 +725,13 @@ export default function AdminTransactions() {
     return () => clearTimeout(timer);
   }, [filters, pagination.limit, fetchTransactions]);
 
+  // Temps réel (cahier V2 · NOT-05) : la liste se met à jour sans recharger la page
+  const live = useStaffLive(() => fetchTransactions(pagination.page));
+
   useEffect(() => {
     fetchActiveAgents();
   }, [fetchActiveAgents]);
 
-  // ── Actions ────────────────────────────────────────────────────────────────
   const handleFinalizeConfirm = async () => {
     const tx = finalizeModal.transaction;
     if (!tx) return;
@@ -522,7 +813,6 @@ export default function AdminTransactions() {
     setRedirectModalOpen(true);
   };
 
-  // ── Gestion des filtres ───────────────────────────────────────────────────
   const handleFilterChange = (key, value) => setFilters(p => ({ ...p, [key]: value }));
   const clearFilter = (key) => setFilters(p => ({ ...p, [key]: "" }));
   const resetFilters = () => setFilters({ agent_id: "", status: "", from_date: "", to_date: "" });
@@ -534,9 +824,9 @@ export default function AdminTransactions() {
     if (newPage >= 1 && newPage <= pagination.pages) fetchTransactions(newPage);
   };
 
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-3 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
+      <LiveNotice notice={live.notice} onClose={live.dismiss} />
 
       <ConfirmModal
         open={finalizeModal.open}
@@ -637,11 +927,9 @@ export default function AdminTransactions() {
           </div>
         </div>
 
-        {/* Panneau filtres */}
         {showFilters && (
           <div className="bg-white p-3 sm:p-4 rounded-xl shadow-sm border border-gray-200">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-              {/* Agent ID (numérique) */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">ID Agent</label>
                 <div className="relative">
@@ -661,7 +949,6 @@ export default function AdminTransactions() {
                 </div>
               </div>
 
-              {/* Statut */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">Statut</label>
                 <select
@@ -678,7 +965,6 @@ export default function AdminTransactions() {
                 </select>
               </div>
 
-              {/* Date début */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">Date début</label>
                 <div className="relative">
@@ -697,7 +983,6 @@ export default function AdminTransactions() {
                 </div>
               </div>
 
-              {/* Date fin */}
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-gray-700">Date fin</label>
                 <div className="relative">
@@ -728,7 +1013,6 @@ export default function AdminTransactions() {
           </div>
         )}
 
-        {/* Filtres actifs */}
         {hasActiveFilters && (
           <div className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg text-sm flex flex-wrap items-center gap-2">
             <Filter size={13} />
@@ -744,7 +1028,6 @@ export default function AdminTransactions() {
         )}
       </div>
 
-      {/* Erreur fetch */}
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded-lg mb-4 text-sm flex items-start gap-2">
           <AlertCircle size={15} className="mt-0.5 flex-shrink-0" />
@@ -752,7 +1035,6 @@ export default function AdminTransactions() {
         </div>
       )}
 
-      {/* Compteur */}
       {!loading && !error && pagination.total > 0 && (
         <div className="bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg mb-4 flex justify-between items-center text-sm">
           <div className="flex items-center gap-2">
@@ -763,7 +1045,6 @@ export default function AdminTransactions() {
         </div>
       )}
 
-      {/* États */}
       {loading ? (
         <div className="bg-white rounded-xl shadow-sm p-8 text-center">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600 mx-auto" />
@@ -790,12 +1071,12 @@ export default function AdminTransactions() {
           {/* TABLEAU desktop */}
           <div className="hidden md:block bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px]">
+              <table className="w-full min-w-[900px]">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pays</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Montant & Frais</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
@@ -804,11 +1085,15 @@ export default function AdminTransactions() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {transactions.map(t => {
+                    const redirected = isRedirected(t);
                     const canFinalize = t.status === "validee";
                     const canCancel   = t.status === "en_attente" || t.status === "validee";
-                    const canRedirect = t.status === "validee";
+                    const canRedirect = t.status === "validee" && !redirected;
+                    const originName = getOriginAgentName(t);
+                    const payoutName = getPayoutAgentName(t);
+
                     return (
-                      <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                      <tr key={t.id} className={`hover:bg-gray-50 transition-colors ${redirected ? "bg-violet-50/40" : ""}`}>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Hash size={13} className="text-gray-400" />
@@ -822,18 +1107,57 @@ export default function AdminTransactions() {
                             <span className="font-medium text-gray-900 truncate max-w-[70px]">{t.to_country || "N/A"}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1 font-semibold text-gray-900 text-sm">
-                            <DollarSign size={12} className="text-green-600" />
-                            {fmt(t.send_amount)} {t.from_currency_code || ""}
+
+                        {/* Colonne Montant & Frais */}
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1 font-semibold text-gray-900 text-sm">
+                              <DollarSign size={12} className="text-green-600 flex-shrink-0" />
+                              <span>{fmt(t.send_amount)} {t.from_currency_code || ""}</span>
+                            </div>
+
+                            <FeesBadges tx={t} />
+
+                            {(hasWithdrawalFee(t) || hasSendingFee(t)) && (
+                              <div className="flex flex-col gap-0.5 text-[10px] text-gray-500">
+                                {hasWithdrawalFee(t) && (
+                                  <span>
+                                    − {fmt(t.withdrawal_fee_amount)} {t.from_currency_code}
+                                    {" "}→ net {fmt(t.net_send_amount)} {t.from_currency_code}
+                                  </span>
+                                )}
+                                {hasSendingFee(t) && (
+                                  <span className="text-indigo-600">
+                                    + {fmt(t.sending_fee_amount)} {t.to_currency_code} débité agent
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+                              <ArrowRight size={10} className="text-gray-400 flex-shrink-0" />
+                              <span className="font-medium text-gray-700">
+                                {fmt(t.receive_amount)} {t.to_currency_code || ""}
+                              </span>
+                            </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2 text-sm text-gray-700">
-                            <User size={12} className="text-gray-400" />
-                            <span className="truncate max-w-[90px]">{t.agent_name || "—"}</span>
+
+                        {/* Colonne Agent — affiche redirection si applicable */}
+                        <td className="px-4 py-3">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5 text-sm text-gray-700">
+                              <User size={12} className="text-gray-400 flex-shrink-0" />
+                              <span className="truncate max-w-[100px]" title={payoutName || ""}>
+                                {payoutName || "—"}
+                              </span>
+                            </div>
+                            {redirected && (
+                              <RedirectionBadge tx={t} />
+                            )}
                           </div>
                         </td>
+
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(t.status)}`}>
                             {getStatusIcon(t.status)}
@@ -882,11 +1206,14 @@ export default function AdminTransactions() {
           {/* CARTES mobile */}
           <div className="md:hidden space-y-3">
             {transactions.map(t => {
+              const redirected = isRedirected(t);
               const canFinalize = t.status === "validee";
               const canCancel   = t.status === "en_attente" || t.status === "validee";
-              const canRedirect = t.status === "validee";
+              const canRedirect = t.status === "validee" && !redirected;
+              const payoutName = getPayoutAgentName(t);
+
               return (
-                <div key={t.id} className="bg-white rounded-xl shadow-sm p-3 border border-gray-200">
+                <div key={t.id} className={`bg-white rounded-xl shadow-sm p-3 border ${redirected ? "border-violet-300" : "border-gray-200"}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Hash size={13} className="text-blue-600 flex-shrink-0" />
@@ -897,6 +1224,7 @@ export default function AdminTransactions() {
                       {translateStatus(t.status)}
                     </div>
                   </div>
+
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2">
                       <MapPin size={11} className="text-gray-400 flex-shrink-0" />
@@ -904,17 +1232,50 @@ export default function AdminTransactions() {
                       <ArrowRight size={10} className="text-gray-400" />
                       <span className="font-medium text-gray-900 text-xs">{t.to_country || "N/A"}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <DollarSign size={11} className="text-green-600 flex-shrink-0" />
-                      <span className="font-semibold text-gray-900 text-sm">{fmt(t.send_amount)} {t.from_currency_code || ""}</span>
-                      {t.receive_amount && (
-                        <span className="text-xs text-gray-500">→ {fmt(t.receive_amount)} {t.to_currency_code || ""}</span>
+
+                    {/* Bloc redirection mobile */}
+                    {redirected && <RedirectionBadge tx={t} />}
+
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <DollarSign size={11} className="text-green-600 flex-shrink-0" />
+                        <span className="font-semibold text-gray-900 text-sm">
+                          {fmt(t.send_amount)} {t.from_currency_code || ""}
+                        </span>
+                      </div>
+
+                      <div className="pl-5">
+                        <FeesBadges tx={t} />
+                      </div>
+
+                      {(hasWithdrawalFee(t) || hasSendingFee(t)) && (
+                        <div className="flex flex-col gap-0.5 text-[10px] text-gray-500 pl-5">
+                          {hasWithdrawalFee(t) && (
+                            <span>
+                              − {fmt(t.withdrawal_fee_amount)} {t.from_currency_code}
+                              {" "}→ net {fmt(t.net_send_amount)} {t.from_currency_code}
+                            </span>
+                          )}
+                          {hasSendingFee(t) && (
+                            <span className="text-indigo-600">
+                              + {fmt(t.sending_fee_amount)} {t.to_currency_code} débité agent
+                            </span>
+                          )}
+                        </div>
                       )}
+
+                      <div className="flex items-center gap-1 text-[11px] text-gray-500 pl-5 flex-wrap">
+                        <ArrowRight size={10} className="text-gray-400 flex-shrink-0" />
+                        <span className="font-medium text-gray-700">
+                          {fmt(t.receive_amount)} {t.to_currency_code || ""}
+                        </span>
+                      </div>
                     </div>
+
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-1.5">
                         <User size={11} className="text-gray-400" />
-                        <span className="text-xs text-gray-700">{t.agent_name || "—"}</span>
+                        <span className="text-xs text-gray-700">{payoutName || "—"}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Calendar size={11} className="text-gray-400" />
@@ -928,6 +1289,7 @@ export default function AdminTransactions() {
                       <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">{t.receiver_method || "N/A"}</span>
                     </div>
                   </div>
+
                   <div className="flex justify-center items-center gap-1 mt-3 pt-3 border-t border-gray-100">
                     <button onClick={() => setSelectedTransaction(t)} className="p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors" title="Détails">
                       <Eye size={15} />

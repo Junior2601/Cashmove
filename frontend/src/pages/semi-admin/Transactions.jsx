@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../api/axios";
+import useStaffLive from "../../realtime/useStaffLive";
+import LiveNotice from "../../realtime/LiveNotice";
 import {
   Search,
   Filter,
@@ -436,6 +438,9 @@ export default function AdminTransactions() {
     return () => clearTimeout(timer);
   }, [filters, pagination.limit, fetchTransactions]);
 
+  // Temps réel (cahier V2 · NOT-05) : la liste se met à jour sans recharger la page
+  const live = useStaffLive(() => fetchTransactions(pagination.page));
+
   useEffect(() => {
     fetchActiveAgents();
   }, [fetchActiveAgents]);
@@ -537,6 +542,7 @@ export default function AdminTransactions() {
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-3 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
+      <LiveNotice notice={live.notice} onClose={live.dismiss} />
 
       <ConfirmModal
         open={finalizeModal.open}

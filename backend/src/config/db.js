@@ -1,12 +1,8 @@
-// Par défaut, node-postgres parse les TIMESTAMPTZ et les convertit en UTC.
-// On désactive ça pour recevoir la chaîne brute telle que PostgreSQL la retourne
-// (donc avec le timezone de la session, soit +03:00).
 const { types } = require("pg");
 
 // OID 1114 = TIMESTAMP, OID 1184 = TIMESTAMPTZ
-types.setTypeParser(1114, (val) => val);  // retourne la string brute
-types.setTypeParser(1184, (val) => val);  // retourne la string brute
-
+types.setTypeParser(1114, (val) => val);
+types.setTypeParser(1184, (val) => val);
 
 const { Pool } = require("pg");
 
@@ -19,11 +15,16 @@ const BASE_CONN_STRING =
 const CONN_STRING =
   BASE_CONN_STRING +
   "?keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5" +
-  "&options=-c%20timezone%3DAfrica%2FNairobi"; 
+  "&options=-c%20timezone%3DAfrica%2FNairobi";
+
+// PostgreSQL local (localhost) : pas de SSL. Render et les autres hébergeurs : SSL.
+// DB_SSL=true|false force le choix si besoin.
+const IS_LOCAL_DB = /@(localhost|127\.0\.0\.1)(:\d+)?\//.test(BASE_CONN_STRING);
+const USE_SSL = process.env.DB_SSL ? process.env.DB_SSL === "true" : !IS_LOCAL_DB;
 
 const POOL_CONFIG = {
   connectionString: CONN_STRING,
-  ssl: { rejectUnauthorized: false },
+  ssl: USE_SSL ? { rejectUnauthorized: false } : false,
   max: 10,
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 5000,
@@ -40,9 +41,6 @@ function createPool() {
 
   p.on("connect", (client) => {
     client.connection.stream.setKeepAlive(true, 10000);
-    // client.query("SET timezone = 'Africa/Nairobi'").catch(err =>
-    //   console.warn("⚠️ Impossible de SET timezone:", err.message)
-    // );
     client.on("error", (err) => {
       console.error("❌ Client error:", err.message);
     });
@@ -52,8 +50,6 @@ function createPool() {
 }
 
 // ─── Singleton pool ───────────────────────────────────────────────────────────
-// On garde pool dans un objet pour que les fonctions query/getClient
-// lisent toujours la référence courante même après une recréation.
 
 const state = { pool: createPool() };
 
@@ -64,7 +60,6 @@ function getPool() {
 function recreatePool() {
   const old = state.pool;
   state.pool = createPool();
-  // Ferme l'ancien pool proprement sans bloquer
   old.end().catch((err) =>
     console.warn("⚠️  Erreur fermeture ancien pool:", err.message)
   );
@@ -90,8 +85,6 @@ function isConnectionError(err) {
 }
 
 // ─── query ────────────────────────────────────────────────────────────────────
-// Wrapper simple autour de pool.query avec un retry automatique
-// si la connexion est perdue.
 
 async function query(text, params) {
   try {
@@ -100,7 +93,6 @@ async function query(text, params) {
     if (isConnectionError(err)) {
       console.warn("⚠️  Connexion perdue, recréation du pool...");
       recreatePool();
-      // Un seul retry — si ça échoue encore, on laisse l'erreur remonter
       return await getPool().query(text, params);
     }
     throw err;
@@ -108,8 +100,7 @@ async function query(text, params) {
 }
 
 // ─── getClient ────────────────────────────────────────────────────────────────
-// Pour les transactions (BEGIN / COMMIT / ROLLBACK).
-// Configure timezone et timeouts sur le client après checkout.
+// Pour les transactions internes (BEGIN / COMMIT / ROLLBACK).
 
 async function getClient(attempt = 1) {
   const MAX_ATTEMPTS = 3;
@@ -129,9 +120,7 @@ async function getClient(attempt = 1) {
     console.warn(
       `⚠️  Connexion dégradée (tentative ${attempt}/${MAX_ATTEMPTS}): ${err.message} — rejet et retry`
     );
-    try {
-      client.release(err);
-    } catch (_) {}
+    try { client.release(err); } catch (_) {}
 
     if (attempt < MAX_ATTEMPTS) {
       return getClient(attempt + 1);
@@ -139,6 +128,32 @@ async function getClient(attempt = 1) {
     throw new Error(
       `Impossible d'obtenir une connexion saine après ${MAX_ATTEMPTS} tentatives: ${err.message}`
     );
+  }
+
+  return client;
+}
+
+// ─── connect ──────────────────────────────────────────────────────────────────
+// Méthode dédiée pour les services qui appellent db.connect() directement
+// (ex: agent_service.js). Retourne un client pg standard avec .query() et
+// .release() — utilisable pour BEGIN / COMMIT / ROLLBACK.
+
+async function connect() {
+  const client = await getPool().connect();
+
+  if (!client.listenerCount("error")) {
+    client.on("error", (err) => {
+      console.error("❌ connect() client error:", err.message);
+    });
+  }
+
+  try {
+    await client.query("SET timezone = 'Africa/Nairobi'");
+    await client.query("SET lock_timeout = '5000ms'");
+    await client.query("SET statement_timeout = '30000ms'");
+  } catch (err) {
+    try { client.release(err); } catch (_) {}
+    throw new Error("Impossible d'initialiser la connexion : " + err.message);
   }
 
   return client;
@@ -164,8 +179,6 @@ async function connectWithRetry(attempt = 1, max = 5) {
 connectWithRetry();
 
 // ─── Ping toutes les 4 minutes ────────────────────────────────────────────────
-// Garde les connexions vivantes sur Render (Pro ne dort pas,
-// mais le firewall peut couper les connexions idle longues).
 
 setInterval(async () => {
   try {
@@ -178,8 +191,6 @@ setInterval(async () => {
 }, 4 * 60 * 1000);
 
 // ─── Killer de transactions idle-in-transaction ───────────────────────────────
-// Une transaction zombie tient des row-locks et bloque les requêtes
-// concurrentes. On les termine toutes les 30s si idle > 45s.
 
 setInterval(async () => {
   try {
@@ -191,9 +202,7 @@ setInterval(async () => {
         AND pid <> pg_backend_pid()
     `);
     if (result.rowCount > 0) {
-      console.warn(
-        `⚠️  ${result.rowCount} transaction(s) idle-in-transaction terminée(s)`
-      );
+      console.warn(`⚠️  ${result.rowCount} transaction(s) idle-in-transaction terminée(s)`);
     }
   } catch (err) {
     console.warn("⚠️  Killer idle-in-transaction échoué:", err.message);
@@ -213,13 +222,11 @@ process.on("uncaughtException", (err) => {
 });
 
 // ─── Exports ──────────────────────────────────────────────────────────────────
-// On exporte les fonctions ET l'accès direct au pool pour les cas
-// où du code existant fait encore pool.query() ou pool.connect().
 
 module.exports = {
   query,
   getClient,
-  // Compatibilité avec l'ancien code qui faisait `pool.query()`
+  connect,
   get pool() {
     return getPool();
   },

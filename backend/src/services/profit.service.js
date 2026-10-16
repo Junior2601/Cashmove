@@ -1,4 +1,15 @@
 // services/profit.service.js
+// Règles de calcul : migration 006_profit_rules.sql (une seule source de vérité en SQL)
+//
+//   Taux interne      1 RUB = (taux client RUB→devise + 0,20) devise   — profit_spread()
+//   Par transaction   marge brute = valeur RUB encaissée − valeur RUB décaissée
+//                     bénéfice net = marge brute − commission de l'agent
+//                     (figé dans transaction_profits quand la transaction est effectuée)
+//   Par jour          bénéfice = somme des bénéfices nets des transactions du jour
+//                     contrôle = variation des soldes − apports nets de l'admin
+//
+// Les dates « du jour » sont celles de la base (fuseau Africa/Nairobi), jamais
+// celles du serveur Node (UTC sur Render).
 const db = require("../config/db");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,50 +20,50 @@ const toFloat = (v, fallback = 0) => {
   const n = parseFloat(v);
   return isNaN(n) ? fallback : n;
 };
+const toFloatOrNull = (v) => (v === null || v === undefined ? null : toFloat(v));
+const round2 = (n) => Math.round(n * 100) / 100;
 
-// Normalise la réponse JSONB de get_profit() en objet JS propre.
-// Champs garantis : period, from, to, start_balance_rub, end_balance_rub,
-//                   total_profit_rub, is_profit, days[]
-const normalizeProfit = (raw) => {
-  if (!raw || typeof raw !== "object") {
-    return {
-      period: null,
-      from: null,
-      to: null,
-      start_balance_rub: 0,
-      end_balance_rub: 0,
-      total_profit_rub: 0,
-      is_profit: true,
-      days: [],
-    };
-  }
+// Date du jour selon la base (Africa/Nairobi)
+const todayInDb = async () => {
+  const { rows } = await db.query(`SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d`);
+  return rows[0].d;
+};
 
-  // Normalise chaque entrée journalière
-  const rawDays = Array.isArray(raw.days) ? raw.days : [];
-  const days = rawDays.map((d) => {
-    const profitRub = d.profit_rub !== null && d.profit_rub !== undefined
-      ? toFloat(d.profit_rub)
-      : null;
-    return {
-      date:              d.date || null,
-      start_balance_rub: toFloat(d.start_balance_rub),
-      end_balance_rub:   toFloat(d.end_balance_rub),
-      profit_rub:        profitRub,
-      is_profit:         profitRub === null ? null : profitRub >= 0,
-    };
-  });
-
-  const totalProfit = toFloat(raw.total_profit_rub);
-
+const normalizeDay = (d) => {
+  const profit = toFloatOrNull(d.profit_rub);
   return {
-    period:            raw.period || null,
-    from:              raw.from || null,
-    to:                raw.to || null,
-    start_balance_rub: toFloat(raw.start_balance_rub),
-    end_balance_rub:   toFloat(raw.end_balance_rub),
-    total_profit_rub:  totalProfit,
-    is_profit:         totalProfit >= 0,
-    days,
+    date:               d.date || d.day || null,
+    start_balance_rub:  toFloatOrNull(d.start_balance_rub ?? d.start_rub),
+    end_balance_rub:    toFloatOrNull(d.end_balance_rub ?? d.end_rub),
+    net_deposits_rub:   toFloat(d.net_deposits_rub),
+    balance_profit_rub: toFloatOrNull(d.balance_profit_rub),
+    transactions_count: toFloat(d.transactions_count ?? d.tx_count),
+    gross_margin_rub:   toFloat(d.gross_margin_rub),
+    commission_rub:     toFloat(d.commission_rub),
+    profit_rub:         profit,
+    is_profit:          profit === null ? null : profit >= 0,
+  };
+};
+
+// Normalise la réponse JSONB de get_profit() en objet JS propre
+const normalizeProfit = (raw) => {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const total = toFloat(r.total_profit_rub);
+  return {
+    period:             r.period || null,
+    from:               r.from || null,
+    to:                 r.to || null,
+    start_balance_rub:  toFloat(r.start_balance_rub),
+    end_balance_rub:    toFloat(r.end_balance_rub),
+    total_profit_rub:   total,                       // bénéfice net des transactions
+    is_profit:          total >= 0,
+    transactions_count: toFloat(r.transactions_count),
+    gross_margin_rub:   toFloat(r.gross_margin_rub),
+    commission_rub:     toFloat(r.commission_rub),
+    incomplete_count:   toFloat(r.incomplete_count),  // transactions sans taux RUB pour une devise
+    balance_profit_rub: toFloatOrNull(r.balance_profit_rub),
+    net_deposits_rub:   toFloat(r.net_deposits_rub),
+    days:               Array.isArray(r.days) ? r.days.map(normalizeDay) : [],
   };
 };
 
@@ -64,10 +75,7 @@ const takeSnapshotService = async (type) => {
   if (!["start_of_day", "end_of_day"].includes(type)) {
     throw new Error("Type invalide : start_of_day ou end_of_day");
   }
-  const res = await db.query(
-    `SELECT take_balance_snapshot($1) AS result`,
-    [type]
-  );
+  const res = await db.query(`SELECT take_balance_snapshot($1) AS result`, [type]);
   const result = res.rows[0].result;
   return {
     type,
@@ -82,81 +90,53 @@ const takeSnapshotService = async (type) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const getProfitService = async (period, date) => {
-  const validPeriods = ["day", "week", "month"];
-  if (!validPeriods.includes(period)) {
+  if (!["day", "week", "month"].includes(period)) {
     throw new Error("Période invalide : day, week ou month");
   }
-
-  const targetDate = date || new Date().toISOString().split("T")[0];
+  const targetDate = date || (await todayInDb());
   if (isNaN(Date.parse(targetDate))) {
     throw new Error("Date invalide, format attendu : YYYY-MM-DD");
   }
-
-  const res = await db.query(
-    `SELECT get_profit($1, $2::DATE) AS result`,
-    [period, targetDate]
-  );
-
+  const res = await db.query(`SELECT get_profit($1, $2::DATE) AS result`, [period, targetDate]);
   return normalizeProfit(res.rows[0].result);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HISTORIQUE — N derniers jours depuis balance_snapshots
-// Colonne réelle : total_rub (pas total_balance_rub)
+// HISTORIQUE — N derniers jours (même règle que la période : profit_days)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const getProfitHistoryService = async (limit = 30) => {
   const n = Math.min(Math.max(parseInt(limit) || 30, 1), 90);
-
   const res = await db.query(
-    `
-    SELECT
-      s.snapshot_date,
-      MAX(CASE WHEN s.snapshot_type = 'start_of_day' THEN s.total_rub END) AS start_balance_rub,
-      MAX(CASE WHEN s.snapshot_type = 'end_of_day'   THEN s.total_rub END) AS end_balance_rub
-    FROM balance_snapshots s
-    WHERE s.snapshot_date >= CURRENT_DATE - ($1 || ' days')::INTERVAL
-    GROUP BY s.snapshot_date
-    ORDER BY s.snapshot_date ASC
-    `,
+    `SELECT to_char(day, 'YYYY-MM-DD') AS day, start_rub, end_rub, net_deposits_rub, balance_profit_rub,
+            tx_count, gross_margin_rub, commission_rub, profit_rub
+     FROM profit_days(CURRENT_DATE - ($1::INT - 1), CURRENT_DATE)`,
     [n]
   );
 
-  const days = res.rows.map((row) => {
-    const start    = toFloat(row.start_balance_rub);
-    const hasEnd   = row.end_balance_rub !== null;
-    const end      = hasEnd ? toFloat(row.end_balance_rub) : null;
-    const profit   = hasEnd ? Math.round((end - start) * 100) / 100 : null;
-    return {
-      date:              row.snapshot_date,
-      start_balance_rub: start,
-      end_balance_rub:   end,
-      profit_rub:        profit,
-      is_profit:         profit === null ? null : profit >= 0,
-      is_complete:       hasEnd,
-    };
-  });
+  const days = res.rows.map((row) => ({
+    ...normalizeDay(row),
+    is_complete: row.end_rub !== null,
+  }));
 
-  // Résumé statistique
-  const complete    = days.filter((d) => d.is_complete);
-  const totalProfit = complete.reduce((s, d) => s + (d.profit_rub ?? 0), 0);
-  const profitDays  = complete.filter((d) => d.profit_rub >= 0).length;
-  const lossDays    = complete.filter((d) => d.profit_rub < 0).length;
-  const bestDay     = complete.reduce((b, d) => (!b || d.profit_rub > b.profit_rub ? d : b), null);
-  const worstDay    = complete.reduce((w, d) => (!w || d.profit_rub < w.profit_rub ? d : w), null);
+  // Un jour compte s'il a eu des transactions ou des relevés de soldes
+  const active      = days.filter((d) => d.transactions_count > 0 || d.start_balance_rub !== null);
+  const totalProfit = active.reduce((s, d) => s + (d.profit_rub ?? 0), 0);
+  const profitDays  = active.filter((d) => (d.profit_rub ?? 0) >= 0).length;
+  const lossDays    = active.filter((d) => (d.profit_rub ?? 0) < 0).length;
+  const bestDay     = active.reduce((b, d) => (!b || d.profit_rub > b.profit_rub ? d : b), null);
+  const worstDay    = active.reduce((w, d) => (!w || d.profit_rub < w.profit_rub ? d : w), null);
 
   return {
     days,
     summary: {
       total_days:       days.length,
-      complete_days:    complete.length,
-      total_profit_rub: Math.round(totalProfit * 100) / 100,
+      complete_days:    active.length,
+      total_profit_rub: round2(totalProfit),
       is_profit:        totalProfit >= 0,
       profit_days:      profitDays,
       loss_days:        lossDays,
-      win_rate:         complete.length > 0
-                          ? Math.round((profitDays / complete.length) * 100)
-                          : 0,
+      win_rate:         active.length > 0 ? Math.round((profitDays / active.length) * 100) : 0,
       best_day:  bestDay  ? { date: bestDay.date,  profit_rub: bestDay.profit_rub  } : null,
       worst_day: worstDay ? { date: worstDay.date, profit_rub: worstDay.profit_rub } : null,
     },
@@ -165,191 +145,165 @@ const getProfitHistoryService = async (limit = 30) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BALANCES ACTUELLES + profit non réalisé du jour
-// Colonne réelle : total_rub (pas total_balance_rub)
+// BALANCES ACTUELLES + résultat du jour en cours
 // ─────────────────────────────────────────────────────────────────────────────
 
 const getCurrentBalancesService = async () => {
-  // 1. Balances en temps réel, converties en RUB
+  // 1. Soldes en temps réel, valorisés au taux interne (rub_value)
   const balancesRes = await db.query(`
     SELECT
-      a.id            AS agent_id,
-      a.name          AS agent_name,
-      c.code          AS currency,
-      c.symbol        AS currency_symbol,
+      a.id    AS agent_id,
+      a.name  AS agent_name,
+      c.code  AS currency,
+      c.symbol AS currency_symbol,
       b.amount,
-      CASE
-        WHEN c.code = 'RUB' THEN 1
-        ELSE r.rate + 0.20
-      END AS rate_internal,
-      CASE
-        WHEN c.code = 'RUB' THEN b.amount
-        WHEN r.rate IS NOT NULL THEN ROUND(b.amount / (r.rate + 0.20), 2)
-        ELSE NULL
-      END AS amount_rub,
+      internal_rate_from_rub(b.currency_id) AS rate_internal,
+      rub_value(b.amount, b.currency_id)    AS amount_rub,
       b.last_updated
     FROM balances b
     JOIN agents     a ON a.id = b.agent_id AND a.deleted_at IS NULL
     JOIN currencies c ON c.id = b.currency_id
-    LEFT JOIN rates r
-      ON  r.to_currency_id   = b.currency_id
-      AND r.from_currency_id = (SELECT id FROM currencies WHERE code = 'RUB')
-      AND r.is_active = true
-    WHERE b.amount >= 0
+    WHERE b.amount >= 0 AND b.deleted_at IS NULL
     ORDER BY a.name, c.code
   `);
 
-  // 2. Snapshot start_of_day du jour pour le profit non réalisé
-  //    Colonne réelle de balance_snapshots : total_rub
-  const today       = new Date().toISOString().split("T")[0];
-  const snapRes     = await db.query(
-    `SELECT total_rub FROM balance_snapshots
-     WHERE snapshot_type = 'start_of_day' AND snapshot_date = $1
-     LIMIT 1`,
-    [today]
-  );
-  const startOfDayRub = snapRes.rows.length > 0
-    ? toFloat(snapRes.rows[0].total_rub)
-    : null;
+  // 2. Début de journée (date de la base) et apports de l'admin depuis
+  const dayRes = await db.query(`
+    SELECT
+      (SELECT total_rub FROM balance_snapshots
+        WHERE snapshot_type = 'start_of_day' AND snapshot_date = CURRENT_DATE) AS start_rub,
+      (SELECT COALESCE(SUM(CASE WHEN bt.type = 'credit' THEN 1 ELSE -1 END * rub_value(bt.amount, b.currency_id)), 0)
+         FROM balance_transactions bt JOIN balances b ON b.id = bt.balance_id
+        WHERE bt.created_at::DATE = CURRENT_DATE) AS deposits_rub
+  `);
+  const startOfDayRub = toFloatOrNull(dayRes.rows[0].start_rub);
+  const depositsToday = toFloat(dayRes.rows[0].deposits_rub);
 
   // 3. Agréger par agent
-  const byAgent     = {};
+  const byAgent = {};
   let grandTotalRub = 0;
+  const missingRates = new Set();
 
   for (const row of balancesRes.rows) {
     if (!byAgent[row.agent_id]) {
-      byAgent[row.agent_id] = {
-        agent_id:   row.agent_id,
-        agent_name: row.agent_name,
-        balances:   [],
-        total_rub:  0,
-      };
+      byAgent[row.agent_id] = { agent_id: row.agent_id, agent_name: row.agent_name, balances: [], total_rub: 0 };
     }
-    const amountRub = toFloat(row.amount_rub);
+    const amountRub = toFloatOrNull(row.amount_rub);
+    if (amountRub === null && toFloat(row.amount) > 0) missingRates.add(row.currency);
     byAgent[row.agent_id].balances.push({
       currency:        row.currency,
       currency_symbol: row.currency_symbol,
       amount:          toFloat(row.amount),
-      rate_internal:   row.rate_internal ? toFloat(row.rate_internal) : null,
+      rate_internal:   toFloatOrNull(row.rate_internal),
       amount_rub:      amountRub,
       last_updated:    row.last_updated,
     });
-    byAgent[row.agent_id].total_rub += amountRub;
-    grandTotalRub += amountRub;
+    byAgent[row.agent_id].total_rub += amountRub ?? 0;
+    grandTotalRub += amountRub ?? 0;
   }
+  grandTotalRub = round2(grandTotalRub);
 
-  grandTotalRub = Math.round(grandTotalRub * 100) / 100;
-
-  // 4. Profit non réalisé = balance actuelle − snapshot start_of_day
-  const unrealizedProfit = startOfDayRub !== null
-    ? Math.round((grandTotalRub - startOfDayRub) * 100) / 100
-    : null;
+  // 4. Résultat du jour en cours = variation des soldes − apports de l'admin
+  const unrealizedProfit = startOfDayRub !== null ? round2(grandTotalRub - startOfDayRub - depositsToday) : null;
 
   return {
-    agents: Object.values(byAgent).map((a) => ({
-      ...a,
-      total_rub: Math.round(a.total_rub * 100) / 100,
-    })),
-    grand_total_rub:        grandTotalRub,
-    start_of_day_rub:       startOfDayRub,
-    unrealized_profit_rub:  unrealizedProfit,
-    unrealized_is_profit:   unrealizedProfit === null ? null : unrealizedProfit >= 0,
-    computed_at:            new Date().toISOString(),
+    agents: Object.values(byAgent).map((a) => ({ ...a, total_rub: round2(a.total_rub) })),
+    grand_total_rub:       grandTotalRub,
+    start_of_day_rub:      startOfDayRub,
+    net_deposits_today_rub: round2(depositsToday),
+    unrealized_profit_rub: unrealizedProfit,
+    unrealized_is_profit:  unrealizedProfit === null ? null : unrealizedProfit >= 0,
+    missing_rates:         [...missingRates],   // devises sans taux RUB : non valorisées
+    computed_at:           new Date().toISOString(),
   };
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFIT PAR TRANSACTION (figé dans transaction_profits)
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PROFIT PAR TRANSACTION (temps réel)
-// Profit entreprise = spread de 0.20 sur le taux de change, converti en RUB
-// Pour chaque transaction "effectuee" :
-//   profit_rub = send_amount * 0.20 / (rate_applied + 0.20)
-//   (différence entre ce que l'agent récupère au taux interne vs taux client)
-// ─────────────────────────────────────────────────────────────────────────────
- 
 const getTransactionProfitsService = async ({ date, limit = 50 }) => {
-  const targetDate = date || new Date().toISOString().split('T')[0];
- 
-  const res = await db.query(
-    `
-    SELECT
-      t.id,
-      t.tracking_code,
-      t.send_amount,
-      t.receive_amount,
-      t.rate_applied,
-      t.commission_applied,
-      t.completed_at,
-      t.created_at,
-      -- Pays
-      cf.name             AS from_country,
-      curr_from.code      AS from_currency,
-      curr_from.symbol    AS from_symbol,
-      ct.name             AS to_country,
-      curr_to.code        AS to_currency,
-      curr_to.symbol      AS to_symbol,
-      -- Agent
-      a.name              AS agent_name,
-      -- Profit entreprise = spread 0.20 converti en RUB
-      -- send_amount est dans la devise "from" (ex: RUB ou XOF)
-      -- Si from_currency = RUB : profit = send_amount * 0.20 / (rate_applied + 0.20)
-      -- Sinon le send_amount est en devise étrangère, pas de profit direct côté from
-      CASE
-        WHEN curr_from.code = 'RUB' THEN
-          ROUND(t.send_amount * 0.20 / (t.rate_applied + 0.20), 2)
-        ELSE
-          -- Côté réception en RUB: receive_amount / rate_applied * 0.20
-          ROUND(t.receive_amount / NULLIF(t.rate_applied, 0) * 0.20, 2)
-      END AS profit_rub,
-      -- Gain agent (déjà enregistré dans gains)
-      g.gain_amount,
-      curr_gain.code AS gain_currency
-    FROM transactions t
-    JOIN countries    cf        ON cf.id = t.from_country_id
-    JOIN countries    ct        ON ct.id = t.to_country_id
-    JOIN currencies   curr_from ON curr_from.id = cf.currency_id
-    JOIN currencies   curr_to   ON curr_to.id   = ct.currency_id
-    LEFT JOIN agents  a         ON a.id = t.assigned_agent_id
-    LEFT JOIN gains   g         ON g.transaction_id = t.id
-    LEFT JOIN currencies curr_gain ON curr_gain.id = g.currency_id
-    WHERE t.status = 'effectuee'
-      AND DATE(t.completed_at) = $1::DATE
-    ORDER BY t.completed_at DESC
-    LIMIT $2
-    `,
-    [targetDate, limit]
-  );
- 
-  const transactions = res.rows.map((row) => ({
-    id:               row.id,
-    tracking_code:    row.tracking_code,
-    from_country:     row.from_country,
-    to_country:       row.to_country,
-    from_currency:    row.from_currency,
-    from_symbol:      row.from_symbol,
-    to_currency:      row.to_currency,
-    to_symbol:        row.to_symbol,
-    send_amount:      toFloat(row.send_amount),
-    receive_amount:   toFloat(row.receive_amount),
-    rate_applied:     toFloat(row.rate_applied),
+  const targetDate = date || (await todayInDb());
+  const max = Math.min(Math.max(parseInt(limit) || 50, 1), 500);
+
+  const [listRes, totalRes] = await Promise.all([
+    db.query(
+      `SELECT
+         t.id, t.tracking_code, t.send_amount, t.receive_amount, t.rate_applied, t.commission_applied,
+         t.withdrawal_fee_amount, t.sending_fee_amount, t.completed_at, t.created_at,
+         cf.name AS from_country, curr_from.code AS from_currency, curr_from.symbol AS from_symbol,
+         ct.name AS to_country,   curr_to.code   AS to_currency,   curr_to.symbol   AS to_symbol,
+         a.name AS agent_name,
+         p.send_value_rub, p.payout_value_rub, p.withdrawal_fee_rub, p.sending_fee_rub,
+         p.gross_margin_rub, p.commission_rub, p.net_profit_rub, p.complete,
+         g.gain_amount, curr_gain.code AS gain_currency, curr_gain.symbol AS gain_symbol
+       FROM transactions t
+       JOIN countries  cf        ON cf.id = t.from_country_id
+       JOIN countries  ct        ON ct.id = t.to_country_id
+       JOIN currencies curr_from ON curr_from.id = cf.currency_id
+       JOIN currencies curr_to   ON curr_to.id   = ct.currency_id
+       LEFT JOIN agents a        ON a.id = t.assigned_agent_id
+       LEFT JOIN transaction_profits p ON p.transaction_id = t.id
+       LEFT JOIN gains g         ON g.transaction_id = t.id
+       LEFT JOIN currencies curr_gain ON curr_gain.id = g.currency_id
+       WHERE t.status = 'effectuee' AND t.completed_at::DATE = $1::DATE
+       ORDER BY t.completed_at DESC
+       LIMIT $2`,
+      [targetDate, max]
+    ),
+    // Totaux sur TOUTE la journée (pas seulement les lignes affichées)
+    db.query(
+      `SELECT COUNT(*)::INT AS count,
+              COALESCE(SUM(p.net_profit_rub), 0)   AS net,
+              COALESCE(SUM(p.gross_margin_rub), 0) AS gross,
+              COALESCE(SUM(p.commission_rub), 0)   AS commission,
+              COUNT(*) FILTER (WHERE p.complete IS NOT TRUE)::INT AS incomplete
+       FROM transactions t
+       LEFT JOIN transaction_profits p ON p.transaction_id = t.id
+       WHERE t.status = 'effectuee' AND t.completed_at::DATE = $1::DATE`,
+      [targetDate]
+    ),
+  ]);
+
+  const transactions = listRes.rows.map((row) => ({
+    id:                 row.id,
+    tracking_code:      row.tracking_code,
+    from_country:       row.from_country,
+    to_country:         row.to_country,
+    from_currency:      row.from_currency,
+    from_symbol:        row.from_symbol,
+    to_currency:        row.to_currency,
+    to_symbol:          row.to_symbol,
+    send_amount:        toFloat(row.send_amount),
+    receive_amount:     toFloat(row.receive_amount),
+    rate_applied:       toFloat(row.rate_applied),
     commission_applied: toFloat(row.commission_applied),
-    profit_rub:       toFloat(row.profit_rub),
-    gain_amount:      row.gain_amount ? toFloat(row.gain_amount) : null,
-    gain_currency:    row.gain_currency || null,
-    agent_name:       row.agent_name || '—',
-    completed_at:     row.completed_at,
+    send_value_rub:     toFloatOrNull(row.send_value_rub),
+    payout_value_rub:   toFloatOrNull(row.payout_value_rub),
+    withdrawal_fee_rub: toFloatOrNull(row.withdrawal_fee_rub),
+    sending_fee_rub:    toFloatOrNull(row.sending_fee_rub),
+    gross_margin_rub:   toFloatOrNull(row.gross_margin_rub),
+    commission_rub:     toFloatOrNull(row.commission_rub),
+    profit_rub:         toFloatOrNull(row.net_profit_rub),   // bénéfice net
+    complete:           row.complete !== false,
+    gain_amount:        row.gain_amount ? toFloat(row.gain_amount) : null,   // devise d'origine
+    gain_currency:      row.gain_currency || null,
+    gain_symbol:        row.gain_symbol || null,
+    agent_name:         row.agent_name || "—",
+    completed_at:       row.completed_at,
   }));
- 
-  const totalProfitRub = transactions.reduce((s, t) => s + t.profit_rub, 0);
-  const totalGainRub   = transactions.reduce((s, t) => s + (t.gain_amount || 0), 0);
- 
+
+  const t = totalRes.rows[0];
   return {
     date: targetDate,
     transactions,
     summary: {
-      count:             transactions.length,
-      total_profit_rub:  Math.round(totalProfitRub * 100) / 100,
-      total_gain_rub:    Math.round(totalGainRub * 100) / 100,
+      count:             t.count,
+      shown:             transactions.length,
+      total_profit_rub:  round2(toFloat(t.net)),          // bénéfice net
+      gross_margin_rub:  round2(toFloat(t.gross)),
+      total_gain_rub:    round2(toFloat(t.commission)),   // commissions agents, en RUB
+      incomplete_count:  t.incomplete,
     },
     computed_at: new Date().toISOString(),
   };

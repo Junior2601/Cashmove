@@ -4,6 +4,7 @@ const {
   getProfitService,
   getProfitHistoryService,
   getCurrentBalancesService,
+  getTransactionProfitsService,
 } = require("../services/profit.service");
 
 // ─────────────────────────────────────────────────────────────────────────────

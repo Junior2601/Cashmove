@@ -16,6 +16,9 @@ const transactionRoutes = require("./transaction.routes");
 const redirectionRoutes = require("./redirection.routes");
 const profitRoutes = require("./profit.routes");
 const gainRoutes = require("./gain.routes");
+const meRoutes = require("./me.routes");
+const announcementRoutes = require("./announcement.routes");
+const pushRoutes = require("./push.routes");
 // const benefitRoutes = require("./benefit.routes");
 
 
@@ -34,6 +37,9 @@ router.use("/transactions", transactionRoutes);
 router.use("/redirections", redirectionRoutes);
 router.use("/profit", profitRoutes);
 router.use("/gains", gainRoutes);
+router.use("/me", meRoutes);
+router.use("/announcements", announcementRoutes);
+router.use("/push", pushRoutes);
 // router.use("/benefit", benefitRoutes);
 
 // route test

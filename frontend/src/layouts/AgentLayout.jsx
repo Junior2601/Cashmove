@@ -5,9 +5,12 @@ import {
 } from 'lucide-react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import useAuth from '../hooks/useAuth';
+import { useStaffPushInit } from '../pwa/staffPush';
+import { StaffPushBanner, StaffPushToggle } from '../pwa/StaffPushControl';
 
 export default function AgentLayout() {
   const { logout } = useAuth();
+  useStaffPushInit();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
 
@@ -120,6 +123,9 @@ export default function AgentLayout() {
 
       {/* Main */}
       <main className="flex-1 p-4 lg:p-8 min-h-screen overflow-x-hidden">
+        {/* Notifications push : remplacent les e-mails du personnel */}
+        <StaffPushBanner className="mb-4" />
+        <div className="mb-2 flex justify-end"><StaffPushToggle /></div>
         <div className="lg:hidden mb-6">
           <button
             onClick={() => setSidebarOpen(true)}

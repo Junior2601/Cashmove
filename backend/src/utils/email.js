@@ -22,4 +22,17 @@ const sendEmail = async ({ to, subject, html }) => {
   }
 };
 
-module.exports = { sendEmail };
+// Variante qui lève une erreur si l'envoi échoue (ex : code de connexion,
+// où l'appelant doit prévenir l'utilisateur au lieu de continuer).
+const sendEmailOrThrow = async ({ to, subject, html }) => {
+  const { data, error } = await resend.emails.send({
+    from: 'Move Cash <noreply@movecash.site>',
+    to,
+    subject,
+    html,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+};
+
+module.exports = { sendEmail, sendEmailOrThrow };

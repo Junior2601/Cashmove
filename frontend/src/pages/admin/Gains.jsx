@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -16,6 +17,42 @@ import {
   ChevronUp
 } from 'lucide-react';
 import api from '../../api/axios';
+
+// ─── Enveloppe commune des modales (identique à Transactions.jsx) ────────────
+function ModalShell({ open, onClose, children, maxWidth = "max-w-md" }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto overscroll-contain"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div className={`w-full ${maxWidth} my-auto`} onMouseDown={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 // Composant de notification
 const Notification = ({ message, type, onClose }) => {
@@ -125,6 +162,11 @@ export default function AgentsGains() {
   const [filters, setFilters] = useState({ agent_id: '', currency_code: '' });
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Historique mensuel d'un agent (par devise)
+  const [historyAgent, setHistoryAgent] = useState(null);
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -263,6 +305,42 @@ export default function AgentsGains() {
     fetchCurrentMonthGains();
   };
 
+  // Ouvre le modal et récupère l'historique mensuel (12 mois) de l'agent, par devise
+  const openAgentHistory = async (agentId, agentName) => {
+    setHistoryAgent({ id: agentId, name: agentName });
+    setHistoryLoading(true);
+    setHistoryData([]);
+    try {
+      const res = await api.get(`/gains/agent/${agentId}/monthly`);
+      let rows = [];
+      if (res.data?.success && Array.isArray(res.data.data)) rows = res.data.data;
+      else if (Array.isArray(res.data)) rows = res.data;
+      setHistoryData(rows);
+    } catch (err) {
+      console.error('Error fetching agent history:', err);
+      if (err.response?.status === 403) {
+        showNotification('Accès non autorisé à l\'historique', 'error');
+      } else {
+        showNotification('Erreur lors du chargement de l\'historique', 'error');
+      }
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const closeAgentHistory = () => {
+    setHistoryAgent(null);
+    setHistoryData([]);
+  };
+
+  const formatMonthLabel = (monthValue) => {
+    // monthValue est un DATE_TRUNC('month') → parseable par Date
+    const d = new Date(monthValue);
+    if (isNaN(d.getTime())) return monthValue;
+    return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  };
+
   const formatAmount = (amount, currencyCode = 'USD') => {
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
@@ -340,6 +418,27 @@ export default function AgentsGains() {
         </div>
       )}
 
+      {/* Consulter l'historique de n'importe quel agent (même sans gain ce mois) */}
+      <div className="bg-white rounded-lg lg:rounded-xl shadow-sm p-4 mb-4 lg:mb-6 border border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2"><Calendar size={16} className="text-indigo-500" />Historique d'un agent</label>
+            <select
+              value=""
+              onChange={(e) => {
+                const selected = agents.find(a => a.id.toString() === e.target.value);
+                if (selected) openAgentHistory(selected.id, selected.name);
+              }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+            >
+              <option value="">Sélectionner un agent pour voir son historique…</option>
+              {agents.map(agent => (<option key={`hist-select-${agent.id}`} value={agent.id}>{agent.name}</option>))}
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Accès aux 12 derniers mois, par devise — indépendamment des gains du mois en cours.</p>
+      </div>
+
       {/* Statistiques */}
       {loading ? <StatsSkeleton /> : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-6">
@@ -366,7 +465,7 @@ export default function AgentsGains() {
               {filteredGains.length > 0 ? (
                 <div className="divide-y divide-gray-200">
                   {filteredGains.map((item, idx) => (
-                    <div key={`mobile-gain-${item.agent_id}-${item.currency_code}-${idx}`} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div key={`mobile-gain-${item.agent_id}-${item.currency_code}-${idx}`} onClick={() => openAgentHistory(item.agent_id, item.agent_name)} className="p-4 hover:bg-gray-50 transition-colors cursor-pointer">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center"><div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium">{item.agent_name?.charAt(0).toUpperCase() || 'A'}</div><div className="ml-3"><div className="text-sm font-medium text-gray-900">{item.agent_name || 'N/A'}</div><div className="text-xs text-gray-500">ID: {item.agent_id}</div></div></div>
                         <div className="text-right"><div className="text-sm font-semibold text-green-600">{formatAmountCompact(item.total_gains, item.currency_code)}</div><div className="text-xs text-gray-500">{item.number_of_gains} trans.</div></div>
@@ -374,6 +473,7 @@ export default function AgentsGains() {
                       <div className="space-y-2 text-sm">
                         <div className="flex items-center text-gray-700"><Globe size={14} className="mr-2 text-gray-400 flex-shrink-0" /><span className="truncate">{item.currency_code}</span></div>
                         <div className="flex items-center text-gray-700"><div className="w-4 mr-2 flex justify-center flex-shrink-0"><span className="text-xs text-gray-400">%</span></div><span>Commission: {item.average_commission_percent ? `${(item.average_commission_percent * 100).toFixed(1)}%` : 'N/A'}</span></div>
+                        <div className="flex items-center text-indigo-600 pt-1"><Calendar size={14} className="mr-2 flex-shrink-0" /><span className="text-xs font-medium">Voir l'historique</span></div>
                       </div>
                     </div>
                   ))}
@@ -387,7 +487,7 @@ export default function AgentsGains() {
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
-                    <tr><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Devise</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Gains</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nb Transactions</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commission Moyenne</th></tr>
+                    <tr><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Devise</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Gains</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nb Transactions</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commission Moyenne</th><th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Historique</th></tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredGains.length > 0 ? filteredGains.map((item, idx) => (
@@ -397,9 +497,10 @@ export default function AgentsGains() {
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{formatAmount(item.total_gains, item.currency_code)}</td>
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.number_of_gains}</td>
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-700">{item.average_commission_percent ? `${(item.average_commission_percent * 100).toFixed(2)}%` : 'N/A'}</td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap"><button onClick={() => openAgentHistory(item.agent_id, item.agent_name)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"><Calendar size={14} />Voir</button></td>
                       </tr>
                     )) : (
-                      <tr><td colSpan={5} className="px-6 py-8 text-center"><div className="flex flex-col items-center"><DollarSign size={32} className="text-gray-300 mb-2" /><p className="text-base font-medium text-gray-500">Aucun gain trouvé</p><p className="text-sm text-gray-400 mt-1">{filters.agent_id || filters.currency_code ? "Aucune donnée ne correspond" : "Aucun gain enregistré pour le mois"}</p></div></td></tr>
+                      <tr><td colSpan={6} className="px-6 py-8 text-center"><div className="flex flex-col items-center"><DollarSign size={32} className="text-gray-300 mb-2" /><p className="text-base font-medium text-gray-500">Aucun gain trouvé</p><p className="text-sm text-gray-400 mt-1">{filters.agent_id || filters.currency_code ? "Aucune donnée ne correspond" : "Aucun gain enregistré pour le mois"}</p></div></td></tr>
                     )}
                   </tbody>
                 </table>
@@ -429,6 +530,75 @@ export default function AgentsGains() {
           </div>
         </div>
       )}
+
+      {/* Modal historique mensuel par devise — même logique de positionnement que Transactions.jsx */}
+      <ModalShell
+        open={!!historyAgent}
+        onClose={closeAgentHistory}
+        maxWidth="max-w-2xl"
+      >
+        <div className="bg-white w-full rounded-2xl shadow-2xl max-h-[85vh] flex flex-col border border-gray-100">
+          {/* En-tête modal */}
+          <div className="flex items-center justify-between p-4 lg:p-6 border-b border-gray-100">
+            <div className="flex items-center">
+              <div className="flex-shrink-0 h-11 w-11 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-medium text-lg">{historyAgent?.name?.charAt(0).toUpperCase() || 'A'}</div>
+              <div className="ml-3">
+                <h2 className="text-base lg:text-lg font-semibold text-gray-800">{historyAgent?.name || 'Agent'}</h2>
+                <p className="text-xs text-gray-500">Historique des gains (12 derniers mois)</p>
+              </div>
+            </div>
+            <button onClick={closeAgentHistory} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X size={20} /></button>
+          </div>
+
+          {/* Corps modal */}
+          <div className="overflow-y-auto p-4 lg:p-6 overscroll-contain">
+            {historyLoading ? (
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => (
+                  <div key={`hist-skel-${i}`} className="h-14 bg-gray-100 rounded-lg animate-pulse"></div>
+                ))}
+              </div>
+            ) : historyData.length === 0 ? (
+              <div className="p-8 text-center">
+                <Calendar size={32} className="text-gray-300 mx-auto mb-2" />
+                <p className="text-base font-medium text-gray-500">Aucun historique</p>
+                <p className="text-xs text-gray-400 mt-1">Aucun gain enregistré sur les 12 derniers mois</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Regroupement par devise, chaque devise listant ses mois */}
+                {Object.values(historyData.reduce((acc, row) => {
+                  const code = row.code;
+                  if (!acc[code]) acc[code] = { code, symbol: row.symbol, months: [] };
+                  acc[code].months.push(row);
+                  return acc;
+                }, {})).map(group => {
+                  const totalDevise = group.months.reduce((s, m) => s + parseFloat(m.total_gain || 0), 0);
+                  return (
+                    <div key={`hist-cur-${group.code}`}>
+                      <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                        <div className="flex items-center text-sm font-semibold text-gray-800"><Globe size={16} className="mr-2 text-indigo-500" />{group.code}</div>
+                        <div className="text-sm font-bold text-green-600">{formatAmount(totalDevise, group.code)}</div>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {group.months.map((m, i) => (
+                          <div key={`hist-${group.code}-${i}`} className="flex items-center justify-between py-2.5">
+                            <div className="flex items-center text-sm text-gray-700"><Calendar size={14} className="mr-2 text-gray-400" /><span className="capitalize">{formatMonthLabel(m.month)}</span></div>
+                            <div className="text-right">
+                              <div className="text-sm font-medium text-gray-900">{formatAmount(parseFloat(m.total_gain || 0), group.code)}</div>
+                              <div className="text-xs text-gray-500">{m.transaction_count} trans.</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </ModalShell>
     </div>
   );
 }

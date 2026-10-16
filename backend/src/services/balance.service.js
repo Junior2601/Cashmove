@@ -2,6 +2,17 @@ const db = require("../config/db");
 const BalanceModel = require("../models/balance.model");
 const AgentModel = require("../models/agent.model");
 const CurrencyModel = require("../models/currency.model");
+const History = require("../models/history.model");
+
+// Tout mouvement manuel d'un solde est journalisé : le calcul du bénéfice
+// (profit_days, migration 006) l'exclut. Sans ce journal, un approvisionnement
+// de l'admin était compté comme un bénéfice.
+const logMovement = (client, balanceId, amount, type, description) =>
+  client.query(
+    `INSERT INTO balance_transactions (balance_id, amount, type, description, created_at)
+     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)`,
+    [balanceId, amount, type, description]
+  );
 
 class BalanceService {
   // CREATE - sans transaction (vérifications + insertion unique)
@@ -20,7 +31,20 @@ class BalanceService {
     const existing = await BalanceModel.hasBalance(agent_id, currency_id);
     if (existing) throw new Error("Une balance existe déjà pour cet agent avec cette devise");
 
-    return await BalanceModel.create({ agent_id, currency_id, amount: amount ?? 0 });
+    const initial = Number(amount ?? 0);
+    const client = await db.getClient();
+    try {
+      await client.query("BEGIN");
+      const created = await BalanceModel.create({ agent_id, currency_id, amount: initial }, client);
+      if (initial > 0) await logMovement(client, created.id, initial, "credit", "Solde initial");
+      await client.query("COMMIT");
+      return created;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   // READ - selon rôle
@@ -95,7 +119,7 @@ class BalanceService {
   }
 
   // UPDATE (direct amount) - avec transaction
-  static async updateBalanceAmount(id, amount, userRole) {
+  static async updateBalanceAmount(id, amount, userRole, userId) {
     if (userRole !== "admin") throw new Error("Accès refusé");
     if (amount < 0) throw new Error("Le montant ne peut pas être négatif");
 
@@ -105,6 +129,30 @@ class BalanceService {
       const balance = await BalanceModel.findById(id, client);
       if (!balance) throw new Error("Balance non trouvée");
       const updated = await BalanceModel.updateAmount(id, amount, client);
+      const diff = Number(updated.amount) - Number(balance.amount);
+      if (diff !== 0) {
+        await logMovement(client, id, Math.abs(diff), diff > 0 ? "credit" : "debit", `Ajustement du solde à ${amount}`);
+      }
+
+      await History.create(
+        {
+          action_type: "update",
+          actor_type: userRole,
+          actor_id: userId || null,
+          entity_type: "balance",
+          entity_id: id,
+          description: `Solde ajusté à ${amount}`,
+          metadata: {
+            amount,
+            currency_code: balance.currency_code,
+            agent_name: balance.agent_name,
+            old_amount: balance.amount,
+            new_amount: updated.amount,
+          },
+        },
+        client
+      );
+
       await client.query("COMMIT");
       return updated;
     } catch (error) {
@@ -115,8 +163,8 @@ class BalanceService {
     }
   }
 
-  // CREDIT - avec transaction et historique optionnel
-  static async creditBalance(id, amount, description, userRole) {
+  // CREDIT - avec transaction et historique
+  static async creditBalance(id, amount, description, userRole, userId) {
     if (userRole !== "admin") throw new Error("Accès refusé");
     if (!amount || amount <= 0) throw new Error("Montant valide requis pour le crédit");
 
@@ -128,14 +176,27 @@ class BalanceService {
 
       const updated = await BalanceModel.atomicAddAmount(id, amount, client);
 
-      if (description) {
-        // Vous devez avoir une table balance_transactions (optionnel)
-        await client.query(
-          `INSERT INTO balance_transactions (balance_id, amount, type, description, created_at)
-           VALUES ($1, $2, 'credit', $3, CURRENT_TIMESTAMP)`,
-          [id, amount, description]
-        );
-      }
+      // Historique unifié
+      await History.create(
+        {
+          action_type: "credit",
+          actor_type: userRole,
+          actor_id: userId || null,
+          entity_type: "balance",
+          entity_id: id,
+          description: description || `Crédit de ${amount}`,
+          metadata: {
+            amount,
+            currency_code: balance.currency_code,
+            agent_name: balance.agent_name,
+            old_amount: balance.amount,
+            new_amount: updated.amount,
+          },
+        },
+        client
+      );
+
+      await logMovement(client, id, amount, "credit", description || `Crédit de ${amount}`);
       await client.query("COMMIT");
       return updated;
     } catch (error) {
@@ -147,26 +208,43 @@ class BalanceService {
   }
 
   // DEBIT - avec transaction et vérification de solde
-  static async debitBalance(id, amount, description, userRole) {
+  static async debitBalance(id, amount, description, userRole, userId) {
     if (userRole !== "admin") throw new Error("Accès refusé");
     if (!amount || amount <= 0) throw new Error("Montant valide requis pour le débit");
 
     const client = await db.getClient();
     try {
       await client.query("BEGIN");
+      const balance = await BalanceModel.findById(id, client);
+      if (!balance) throw new Error("Balance non trouvée");
+
       const currentAmount = await BalanceModel.getAmountForUpdate(id, client);
       if (currentAmount < amount) {
         throw new Error(`Solde insuffisant. Solde actuel: ${currentAmount}, débit demandé: ${amount}`);
       }
       const updated = await BalanceModel.atomicAddAmount(id, -amount, client);
 
-      if (description) {
-        await client.query(
-          `INSERT INTO balance_transactions (balance_id, amount, type, description, created_at)
-           VALUES ($1, $2, 'debit', $3, CURRENT_TIMESTAMP)`,
-          [id, amount, description]
-        );
-      }
+      // Historique unifié
+      await History.create(
+        {
+          action_type: "debit",
+          actor_type: userRole,
+          actor_id: userId || null,
+          entity_type: "balance",
+          entity_id: id,
+          description: description || `Débit de ${amount}`,
+          metadata: {
+            amount,
+            currency_code: balance.currency_code,
+            agent_name: balance.agent_name,
+            old_amount: currentAmount,
+            new_amount: updated.amount,
+          },
+        },
+        client
+      );
+
+      await logMovement(client, id, amount, "debit", description || `Débit de ${amount}`);
       await client.query("COMMIT");
       return updated;
     } catch (error) {
@@ -178,7 +256,7 @@ class BalanceService {
   }
 
   // SOFT DELETE - avec transaction
-  static async softDeleteBalance(id, userRole) {
+  static async softDeleteBalance(id, userRole, userId) {
     if (userRole !== "admin") throw new Error("Accès refusé");
     const client = await db.getClient();
     try {
@@ -186,6 +264,27 @@ class BalanceService {
       const balance = await BalanceModel.findById(id, client);
       if (!balance) throw new Error("Balance non trouvée");
       const deleted = await BalanceModel.softDelete(id, client);
+      if (Number(balance.amount) > 0) {
+        await logMovement(client, id, Number(balance.amount), "debit", "Solde supprimé");
+      }
+
+      await History.create(
+        {
+          action_type: "delete",
+          actor_type: userRole,
+          actor_id: userId || null,
+          entity_type: "balance",
+          entity_id: id,
+          description: `Balance supprimée (${balance.agent_name} / ${balance.currency_code})`,
+          metadata: {
+            currency_code: balance.currency_code,
+            agent_name: balance.agent_name,
+            amount: balance.amount,
+          },
+        },
+        client
+      );
+
       await client.query("COMMIT");
       return deleted;
     } catch (error) {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import api from "../../api/axios";
 import {
   Search,
@@ -27,15 +28,54 @@ import {
   MapPin,
 } from "lucide-react";
 
+// ─── Enveloppe commune des modales ───────────────────────────────────────────
+// Rendue via un portail sur document.body : indispensable, car un ancêtre
+// portant une transform (sidebar mobile en translate-x, etc.) devient le
+// référentiel de position:fixed et décale la modale hors de l'écran.
+// Verrouille aussi le scroll de la page et ferme sur Échap.
+function ModalShell({ open, onClose, children }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto overscroll-contain"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div className="w-full max-w-md my-auto" onMouseDown={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Modal de confirmation ───────────────────────────────────────────────────
 function ConfirmModal({
   open, onClose, onConfirm, title, message,
   confirmLabel, confirmColor, loading,
 }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+    <ModalShell open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-6 border border-gray-100">
         <div className="flex items-start gap-3 mb-4">
           <AlertCircle
             size={22}
@@ -72,7 +112,7 @@ function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -83,8 +123,8 @@ function RedirectionDetailModal({ redirection, onClose, onAccept, onReject, acti
   const isPending = redirection.status === "pending";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden border border-gray-100">
+    <ModalShell open={!!redirection} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] overflow-hidden border border-gray-100 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center gap-2 min-w-0">
@@ -102,7 +142,7 @@ function RedirectionDetailModal({ redirection, onClose, onAccept, onReject, acti
         </div>
 
         {/* Body */}
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        <div className="p-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
           <div className="grid grid-cols-2 gap-3">
             <InfoItem label="De (agent)" value={redirection.from_agent_name} />
             <InfoItem label="Email agent" value={redirection.from_agent_email} />
@@ -161,7 +201,7 @@ function RedirectionDetailModal({ redirection, onClose, onAccept, onReject, acti
           </div>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
 }
 

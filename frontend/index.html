@@ -1,13 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1d4ed8" />
+    <meta name="description" content="Transferts d'argent rapides entre la Russie et l'Afrique, suivis en direct." />
+
+    <!-- PWA (cahier V2 · §10) -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MoveCash" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <title>MoveCash - Votre plateforme de transfert rapide</title>
+
+    <!-- Écran de démarrage : visible avant le chargement du JavaScript, remplacé par React -->
+    <style>
+      #mc-splash {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 16px;
+        background: linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      #mc-splash img { width: 112px; height: 112px; }
+      #mc-splash p { margin: 0; font-size: 30px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+      #mc-splash span { color: #facc15; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="mc-splash" aria-label="Chargement de MoveCash">
+        <img src="/icons/icon-192.png" alt="" />
+        <p>Move<span>Cash</span></p>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

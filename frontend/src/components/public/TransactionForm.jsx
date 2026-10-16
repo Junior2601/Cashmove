@@ -8,6 +8,7 @@ import {
   formatPhoneWithPrefix 
 } from '../../utils/phoneValidator';
 import { encryptId } from '../../utils/encryption';
+import PhoneNote from '../PhoneNote';
 
 // Composant personnalisé pour le select de pays avec drapeaux
 const CountrySelect = ({ 
@@ -314,6 +315,11 @@ export default function TransactionForm({ onTransactionComplete }) {
 
   const senderCountry = getCountryById(formData.senderCountryId);
   const receiverCountry = getCountryById(formData.receiverCountryId);
+  // Moyens choisis : précisent la note sous les numéros (« Le numéro Wave qui recevra… »)
+  const methodName = (countryId, methodId) =>
+    (paymentMethods[countryId] || []).find((m) => String(m.id) === String(methodId))?.method;
+  const senderMethodName = methodName(formData.senderCountryId, formData.senderPaymentMethodId);
+  const receiverMethodName = methodName(formData.receiverCountryId, formData.receiverPaymentMethodId);
   const senderPaymentMethods = getPaymentMethodsByCountryId(formData.senderCountryId);
   const receiverPaymentMethods = getPaymentMethodsByCountryId(formData.receiverCountryId);
 
@@ -705,6 +711,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                 </div>
               </div>
               {errors.senderPhone && <p className="mt-1 text-sm text-red-600">{errors.senderPhone}</p>}
+              <PhoneNote prefix={senderCountry?.phone_prefix} value={formData.senderPhone} role="sender" method={senderMethodName} />
             </div>
 
             <div>
@@ -797,6 +804,7 @@ export default function TransactionForm({ onTransactionComplete }) {
                 </div>
               </div>
               {errors.receiverPhone && <p className="mt-1 text-sm text-red-600">{errors.receiverPhone}</p>}
+              <PhoneNote prefix={receiverCountry?.phone_prefix} value={formData.receiverPhone} role="receiver" method={receiverMethodName} />
             </div>
 
             <div>

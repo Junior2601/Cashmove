@@ -2,10 +2,10 @@
 const db = require("../config/db");
 const Transaction = require("../models/transaction.model");
 const History = require("../models/history.model");
-const { sendEmail } = require("../utils/email");
-const { transactionCreatedTemplate } = require("../templates/emailTemplates");
+const Beneficiaries = require("../models/clientBook.model")("beneficiaries");
 
-const createTransactionService = async (data) => {
+// clientId : id du client connecté (V2), null en mode invité
+const createTransactionService = async (data, clientId = null) => {
   let result;
   try {
     const res = await db.query(
@@ -35,43 +35,23 @@ const createTransactionService = async (data) => {
 
   const { transaction, agent, authorized_number } = result;
 
-  const adminsRes = await db.query(
-    `SELECT email, 'admin' as role FROM admins WHERE is_active = true
-     UNION ALL
-     SELECT email, 'semi-admin' as role FROM semi_admins WHERE is_active = true`
-  );
-
-  const emailData = {
-    tracking_code:   transaction.tracking_code,
-    send_amount:     transaction.send_amount,
-    receive_amount:  transaction.receive_amount,
-    from_country_id: data.from_country_id,
-    to_country_id:   data.to_country_id,
-    number:          authorized_number,
-    agent_name:      agent.name,
-    created_at:      transaction.created_at,
-  };
-
-  if (agent.email) {
-    await sendEmail({
-      to: agent.email,
-      subject: `Nouvelle transaction - ${transaction.tracking_code}`,
-      html: transactionCreatedTemplate({ ...emailData, recipient_type: "agent" }),
-    }).catch((e) => console.error("Email agent error:", e.message));
+  // V2 : rattache la transaction au client connecté (historique, notifications)
+  let suggestSaveBeneficiary = false;
+  if (clientId) {
+    await db.query(`UPDATE transactions SET client_id = $1 WHERE id = $2`, [clientId, transaction.id]);
+    const known = await Beneficiaries.findByNumber(clientId, data.receiver_method_id, data.receiver_phone);
+    if (known) await Beneficiaries.touchUsed(clientId, data.receiver_method_id, data.receiver_phone);
+    else suggestSaveBeneficiary = true;   // NUM-02 : « Enregistrer ce bénéficiaire ? »
   }
 
-  for (const admin of adminsRes.rows) {
-    await sendEmail({
-      to: admin.email,
-      subject: `Nouvelle transaction - ${transaction.tracking_code}`,
-      html: transactionCreatedTemplate({ ...emailData, recipient_type: admin.role }),
-    }).catch((e) => console.error("Email admin error:", e.message));
-  }
+  // Le personnel est prévenu par notification push (realtime → staffNotify), plus par e-mail
 
   return {
     ...transaction,
     authorized_number,
     agent_name: agent.name,
+    client_id: clientId,
+    suggest_save_beneficiary: suggestSaveBeneficiary,
   };
 };
 

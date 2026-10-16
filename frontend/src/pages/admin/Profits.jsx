@@ -253,7 +253,7 @@ export default function AdminProfit() {
   const endBalance   = profitData?.end_balance_rub ?? 0;
   const profit       = isPos(mainProfit);
   const periodLabel  = { day: "Journée", week: "Semaine", month: "Mois" }[period];
-  const txSummary    = txProfits?.summary ?? { count: 0, total_profit_rub: 0, total_gain_rub: 0 };
+  const txSummary    = txProfits?.summary ?? { count: 0, shown: 0, total_profit_rub: 0, gross_margin_rub: 0, total_gain_rub: 0 };
   const txList       = txProfits?.transactions ?? [];
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -449,12 +449,20 @@ export default function AdminProfit() {
                   <tbody className="divide-y divide-gray-50">
                     {[
                       { label: "Date", val: profitData.from || date, cls: "text-gray-800 font-semibold" },
-                      { label: "Balance début (RUB)", val: `${fmt(startBalance)} ₽`, cls: "text-gray-800 font-semibold" },
-                      { label: "Balance fin (RUB)",   val: `${fmt(endBalance)} ₽`,   cls: "text-gray-800 font-semibold" },
+                      { label: "Transactions effectuées", val: profitData.transactions_count ?? 0, cls: "text-gray-800 font-semibold" },
+                      { label: "Marge brute (taux + frais)", val: `${fmt(profitData.gross_margin_rub)} ₽`, cls: "text-gray-800 font-semibold" },
+                      { label: "Commissions agents", val: `− ${fmt(profitData.commission_rub)} ₽`, cls: "text-amber-600 font-semibold" },
                       {
-                        label: "Profit / Perte",
+                        label: "Bénéfice net",
                         val: `${profit ? "+" : ""}${fmt(mainProfit)} ₽`,
                         cls: `font-bold ${profit ? "text-green-600" : "text-red-600"}`,
+                      },
+                      { label: "Contrôle — soldes début / fin", val: `${fmt(startBalance)} ₽ → ${fmt(endBalance)} ₽`, cls: "text-gray-500" },
+                      { label: "Contrôle — apports de l'admin", val: `${fmt(profitData.net_deposits_rub)} ₽`, cls: "text-gray-500" },
+                      {
+                        label: "Contrôle — variation des soldes hors apports",
+                        val: profitData.balance_profit_rub === null ? "relevé manquant" : `${fmt(profitData.balance_profit_rub)} ₽`,
+                        cls: "text-gray-500",
                       },
                     ].map((row, i) => (
                       <tr key={i}>
@@ -469,7 +477,7 @@ export default function AdminProfit() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-gray-400 text-xs uppercase">
                       <tr>
-                        {["Date", "Début (RUB)", "Fin (RUB)", "Profit (RUB)", "Résultat"].map((h) => (
+                        {["Date", "Transactions", "Marge brute", "Commissions", "Bénéfice net", "Résultat"].map((h) => (
                           <th key={h} className="px-4 py-2 text-left font-semibold tracking-wide">{h}</th>
                         ))}
                       </tr>
@@ -478,8 +486,9 @@ export default function AdminProfit() {
                       {profitData.days.map((day, idx) => (
                         <tr key={idx} className="hover:bg-gray-50">
                           <td className="px-4 py-2.5 text-gray-700">{day.date}</td>
-                          <td className="px-4 py-2.5">{fmt(day.start_balance_rub)}</td>
-                          <td className="px-4 py-2.5">{fmt(day.end_balance_rub)}</td>
+                          <td className="px-4 py-2.5">{day.transactions_count ?? 0}</td>
+                          <td className="px-4 py-2.5">{fmt(day.gross_margin_rub)}</td>
+                          <td className="px-4 py-2.5 text-amber-600">{day.commission_rub ? `− ${fmt(day.commission_rub)}` : "—"}</td>
                           <td className={`px-4 py-2.5 font-semibold ${day.profit_rub >= 0 ? "text-green-600" : "text-red-600"}`}>
                             {day.profit_rub !== null
                               ? (day.profit_rub >= 0 ? "+" : "") + fmt(day.profit_rub)
@@ -527,7 +536,7 @@ export default function AdminProfit() {
               Profit par transaction
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Bénéfice réalisé sur chaque opération effectuée le {date} — spread de taux +0,20
+              Bénéfice net de chaque opération effectuée le {date} : encaissé − versé (taux interne = taux client + 0,20) − commission de l'agent
             </p>
           </div>
 
@@ -554,11 +563,17 @@ export default function AdminProfit() {
 
         {/* Cartes résumé */}
         {!txLoading && txProfits && (
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <div className="bg-gray-50 rounded-xl p-3 text-center">
               <p className="text-2xl font-extrabold text-gray-900">{txSummary.count}</p>
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-0.5">
-                Transactions
+                Transactions{txSummary.shown < txSummary.count ? ` (${txSummary.shown} affichées)` : ""}
+              </p>
+            </div>
+            <div className="bg-blue-50 rounded-xl p-3 text-center">
+              <p className="text-xl font-extrabold text-blue-700">{fmt(txSummary.gross_margin_rub)} ₽</p>
+              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-0.5">
+                Marge brute
               </p>
             </div>
             <div
@@ -575,15 +590,15 @@ export default function AdminProfit() {
                 {fmt(txSummary.total_profit_rub)} ₽
               </p>
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-0.5">
-                Profit total (RUB)
+                Bénéfice net (RUB)
               </p>
             </div>
             <div className="bg-amber-50 rounded-xl p-3 text-center">
               <p className="text-xl font-extrabold text-amber-600">
-                {fmt(txSummary.total_gain_rub)}
+                {fmt(txSummary.total_gain_rub)} ₽
               </p>
               <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-0.5">
-                Gains agents
+                Commissions agents
               </p>
             </div>
           </div>
@@ -618,7 +633,7 @@ export default function AdminProfit() {
                     "Reçu",
                     "Taux / Comm.",
                     "Agent",
-                    "Profit entreprise",
+                    "Bénéfice net",
                     "Gain agent",
                   ].map((h) => (
                     <th
@@ -693,8 +708,10 @@ export default function AdminProfit() {
                           {tx.profit_rub >= 0 ? "+" : ""}
                           {fmt(tx.profit_rub)} ₽
                         </span>
-                        <span className="block text-xs text-gray-300 mt-0.5">
-                          spread ×0,20
+                        <span className="block text-xs text-gray-400 mt-0.5">
+                          {tx.complete === false
+                            ? "taux RUB manquant"
+                            : `marge ${fmt(tx.gross_margin_rub)} − comm. ${fmt(tx.commission_rub)}`}
                         </span>
                       </td>
 
@@ -781,7 +798,12 @@ export default function AdminProfit() {
             {currentBalances.unrealized_profit_rub !== null && (
               <div className="mb-4 p-3 bg-blue-50 rounded-xl flex items-center justify-between">
                 <span className="text-sm font-semibold text-blue-800">
-                  Profit non réalisé (aujourd'hui)
+                  Variation des soldes aujourd'hui (hors apports de l'admin)
+                  {currentBalances.net_deposits_today_rub ? (
+                    <span className="block text-xs font-normal text-blue-600">
+                      Apports nets de l'admin exclus : {fmt(currentBalances.net_deposits_today_rub)} ₽
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   className={`text-xl font-extrabold ${
@@ -794,6 +816,12 @@ export default function AdminProfit() {
                   {fmt(currentBalances.unrealized_profit_rub)} ₽
                 </span>
               </div>
+            )}
+
+            {currentBalances.missing_rates?.length > 0 && (
+              <p className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                Pas de taux RUB → {currentBalances.missing_rates.join(", ")} : ces soldes ne sont pas valorisés.
+              </p>
             )}
 
             <div className="space-y-3">

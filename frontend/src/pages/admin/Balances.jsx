@@ -6,6 +6,7 @@ import {
   MoreVertical, RefreshCw
 } from "lucide-react";
 import api from "../../api/axios";
+import BalanceHistoryButton from "../../components/BalanceHistoryButton";
 
 export default function AdminBalances() {
   const [balances, setBalances] = useState([]);
@@ -375,6 +376,10 @@ export default function AdminBalances() {
                             <Trash2 size={12} />
                             Supprimer
                           </button>
+                          <BalanceHistoryButton
+                            balance={balance}
+                            className="flex items-center justify-center px-2 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+                          />
                         </div>
                       </div>
                     </div>
@@ -453,6 +458,7 @@ export default function AdminBalances() {
                           <Trash2 size={12} />
                           Supprimer
                         </button>
+                        <BalanceHistoryButton balance={balance} />
                       </div>
                     </td>
                   </tr>

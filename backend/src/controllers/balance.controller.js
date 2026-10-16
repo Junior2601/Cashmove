@@ -113,7 +113,13 @@ const creditBalance = async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, description } = req.body;
-    const updated = await BalanceService.creditBalance(id, amount, description, getUserRole(req));
+    const updated = await BalanceService.creditBalance(
+      id,
+      amount,
+      description,
+      getUserRole(req),
+      getUserId(req)
+    );
     res.json({ success: true, data: updated, message: `Crédit de ${amount} effectué` });
   } catch (error) {
     if (error.message === "Balance non trouvée") {
@@ -133,7 +139,13 @@ const debitBalance = async (req, res) => {
   try {
     const { id } = req.params;
     const { amount, description } = req.body;
-    const updated = await BalanceService.debitBalance(id, amount, description, getUserRole(req));
+    const updated = await BalanceService.debitBalance(
+      id,
+      amount,
+      description,
+      getUserRole(req),
+      getUserId(req)
+    );
     res.json({ success: true, data: updated, message: `Débit de ${amount} effectué` });
   } catch (error) {
     if (error.message === "Balance non trouvée") {
@@ -159,7 +171,12 @@ const updateBalance = async (req, res) => {
     if (amount === undefined) {
       return res.status(400).json({ success: false, message: "Montant requis" });
     }
-    const updated = await BalanceService.updateBalanceAmount(id, amount, getUserRole(req));
+    const updated = await BalanceService.updateBalanceAmount(
+      id,
+      amount,
+      getUserRole(req),
+      getUserId(req)
+    );
     res.json({ success: true, data: updated, message: "Balance mise à jour" });
   } catch (error) {
     if (error.message === "Balance non trouvée") {
@@ -178,7 +195,7 @@ const updateBalance = async (req, res) => {
 const deleteBalance = async (req, res) => {
   try {
     const { id } = req.params;
-    await BalanceService.softDeleteBalance(id, getUserRole(req));
+    await BalanceService.softDeleteBalance(id, getUserRole(req), getUserId(req));
     res.json({ success: true, message: "Balance supprimée avec succès" });
   } catch (error) {
     if (error.message === "Balance non trouvée") {

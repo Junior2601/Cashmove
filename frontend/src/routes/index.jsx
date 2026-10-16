@@ -9,8 +9,22 @@ import AdminLayout     from "../layouts/AdminLayout";
 import SemiAdminLayout from "../layouts/SemiAdminLayout";
 import AgentLayout     from "../layouts/AgentLayout";
 
+// Espace client V2 (SPA avec barre d'icônes)
+import ClientLogin           from "../client/pages/Login";
+import ClientHome            from "../client/pages/Home";
+import ClientSend            from "../client/pages/Send";
+import ClientHistory         from "../client/pages/History";
+import ClientTransactionView from "../client/pages/TransactionView";
+import ClientNotifications   from "../client/pages/Notifications";
+import ClientProfile         from "../client/pages/Profile";
+import ClientBook            from "../client/pages/Book";
+
+// Espace invité (sans compte) — même coquille SPA que le client
+import GuestHome from "../guest/pages/GuestHome";
+import { GuestSend, GuestTrack, GuestCalculator, GuestSupport } from "../guest/pages/GuestPages";
+import { SessionShell, BySession, ClientOnly } from "./SessionRoutes";
+
 // Pages publiques
-import HomePage          from "../pages/publics/HomePage";
 import TransactionDetail from "../pages/publics/TransactionDetail";
 import Unauthorized      from "../pages/publics/Unauthorized";
 
@@ -28,6 +42,7 @@ import AdminPayements  from "../pages/admin/Payements";
 import AdminNumbers  from "../pages/admin/Numbers";
 import AdminTransactions  from "../pages/admin/Transactions";
 import AdminHistories  from "../pages/admin/Histories";
+import AdminAnnouncements from "../pages/admin/Announcements";
 
 // Pages Semi-Admin
 import SemiAdminDashboard from "../pages/semi-admin/Dashboard";
@@ -45,9 +60,25 @@ export default function AppRoutes() {
     <BrowserRouter>
       <Routes>
 
-        {/* ──────── PUBLIC ──────── */}
-        <Route path="/"                         element={<HomePage />} />
-        <Route path="/transaction/:encryptedId" element={<TransactionDetail />} />
+        {/* ──────── PUBLIC (plein écran) ──────── */}
+        <Route path="/connexion"                element={<ClientLogin />} />
+
+        {/* ──────── SPA client / invité : mêmes adresses, coquille selon la session ──────── */}
+        <Route path="/" element={<SessionShell />}>
+          <Route index                  element={<BySession client={<ClientHome />} guest={<GuestHome />} />} />
+          <Route path="envoyer"         element={<BySession client={<ClientSend />} guest={<GuestSend />} />} />
+          <Route path="suivi"           element={<BySession client={<Navigate to="/transactions" replace />} guest={<GuestTrack />} />} />
+          <Route path="calculatrice"    element={<GuestCalculator />} />
+          <Route path="aide"            element={<GuestSupport />} />
+          <Route path="transaction/:encryptedId" element={<TransactionDetail />} />
+
+          {/* Réservé aux clients connectés */}
+          <Route path="transactions"      element={<ClientOnly><ClientHistory /></ClientOnly>} />
+          <Route path="transactions/:ref" element={<ClientOnly><ClientTransactionView /></ClientOnly>} />
+          <Route path="notifications"     element={<ClientOnly><ClientNotifications /></ClientOnly>} />
+          <Route path="profil"            element={<ClientOnly><ClientProfile /></ClientOnly>} />
+          <Route path="profil/numeros"    element={<ClientOnly><ClientBook /></ClientOnly>} />
+        </Route>
         <Route path="/login"                    element={<LoginPage />} />
         <Route path="/unauthorized"             element={<Unauthorized />} />
 
@@ -74,6 +105,7 @@ export default function AppRoutes() {
           <Route path="numbers" element={<AdminNumbers />} />
           <Route path="transactions" element={<AdminTransactions />} />
           <Route path="historiques" element={<AdminHistories />} />
+          <Route path="annonces" element={<AdminAnnouncements />} />
         </Route>
 
         {/* ──────── SEMI-ADMIN ──────── */}

@@ -8,9 +8,8 @@ const CountryModel = require("../models/country.model");
  * Service Agent : contient toute la logique métier (validations, transactions, hash, règles métier).
  */
 class AgentService {
-  // CREATE
+  // ─── CREATE ────────────────────────────────────────────────────────────────
   static async createAgent(data, currentUserRole) {
-    // Seul admin peut créer
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé : seuls les administrateurs peuvent créer un agent");
     }
@@ -35,32 +34,21 @@ class AgentService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Transaction pour créer l'agent (bien qu'une seule requête, on peut utiliser transaction pour l'exemple)
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const agent = await AgentModel.create(
-        {
-          name,
-          email,
-          password: hashedPassword,
-          country_id,
-          can_process: can_process ?? false,
-          is_active: is_active ?? true,
-        },
-        client
-      );
-      await client.query("COMMIT");
-      return agent;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    // ✅ FIX : Un seul INSERT → pas besoin de transaction.
+    // db.query() utilise une connexion du pool, la libère immédiatement.
+    const agent = await AgentModel.create({
+      name,
+      email,
+      password: hashedPassword,
+      country_id,
+      can_process: can_process ?? false,
+      is_active: is_active ?? true,
+    });
+
+    return agent;
   }
 
-  // GET ALL (selon rôle)
+  // ─── GET ALL (selon rôle) ──────────────────────────────────────────────────
   static async getAgents(currentUser) {
     const { role, id: currentAgentId } = currentUser;
 
@@ -76,7 +64,7 @@ class AgentService {
     throw new Error("Rôle non autorisé");
   }
 
-  // GET BY ID (avec vérification droits)
+  // ─── GET BY ID ─────────────────────────────────────────────────────────────
   static async getAgentById(agentId, currentUser) {
     const { role, id: currentUserId } = currentUser;
     const agent = await AgentModel.findById(agentId);
@@ -102,7 +90,7 @@ class AgentService {
     throw new Error("Accès non autorisé");
   }
 
-  // GET CURRENT AGENT (profil)
+  // ─── GET CURRENT AGENT ─────────────────────────────────────────────────────
   static async getCurrentAgent(currentUserId) {
     const agent = await AgentModel.findById(currentUserId);
     if (!agent) {
@@ -111,7 +99,7 @@ class AgentService {
     return agent;
   }
 
-  // UPDATE agent (admin seulement)
+  // ─── UPDATE ────────────────────────────────────────────────────────────────
   static async updateAgent(agentId, data, currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé : seuls les administrateurs peuvent modifier un agent");
@@ -124,7 +112,6 @@ class AgentService {
 
     const { name, email, country_id, can_process, is_active } = data;
 
-    // Vérifier l'email (si changé)
     if (email && email !== existingAgent.email) {
       const emailExists = await AgentModel.emailExists(email, agentId);
       if (emailExists) {
@@ -132,7 +119,6 @@ class AgentService {
       }
     }
 
-    // Vérifier pays
     if (country_id) {
       const country = await CountryModel.findById(country_id);
       if (!country) {
@@ -140,36 +126,22 @@ class AgentService {
       }
     }
 
-    // Transaction pour mise à jour
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const updated = await AgentModel.update(
-        agentId,
-        {
-          name: name ?? existingAgent.name,
-          email: email ?? existingAgent.email,
-          country_id: country_id ?? existingAgent.country_id,
-          can_process: can_process !== undefined ? can_process : existingAgent.can_process,
-          is_active: is_active !== undefined ? is_active : existingAgent.is_active,
-        },
-        client
-      );
-      await client.query("COMMIT");
-      return updated;
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+    // ✅ FIX : Un seul UPDATE → pas besoin de transaction.
+    const updated = await AgentModel.update(agentId, {
+      name: name ?? existingAgent.name,
+      email: email ?? existingAgent.email,
+      country_id: country_id ?? existingAgent.country_id,
+      can_process: can_process !== undefined ? can_process : existingAgent.can_process,
+      is_active: is_active !== undefined ? is_active : existingAgent.is_active,
+    });
+
+    return updated;
   }
 
-  // UPDATE PASSWORD
+  // ─── UPDATE PASSWORD ───────────────────────────────────────────────────────
   static async updatePassword(agentId, { current_password, new_password }, currentUser) {
     const { role, id: currentUserId } = currentUser;
 
-    // Vérifier permissions
     if (role !== "admin" && role !== "agent") {
       throw new Error("Accès non autorisé");
     }
@@ -182,7 +154,6 @@ class AgentService {
       throw new Error("Agent non trouvé");
     }
 
-    // Pour un agent, vérifier l'ancien mot de passe
     if (role === "agent") {
       if (!current_password) {
         throw new Error("Mot de passe actuel requis");
@@ -202,7 +173,7 @@ class AgentService {
     return { message: "Mot de passe mis à jour avec succès" };
   }
 
-  // TOGGLE STATUS (admin seulement)
+  // ─── TOGGLE STATUS ─────────────────────────────────────────────────────────
   static async toggleAgentStatus(agentId, is_active, currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé");
@@ -214,11 +185,10 @@ class AgentService {
     if (!existingAgent) {
       throw new Error("Agent non trouvé");
     }
-    const updated = await AgentModel.updateStatus(agentId, is_active);
-    return updated;
+    return await AgentModel.updateStatus(agentId, is_active);
   }
 
-  // TOGGLE CAN PROCESS (admin seulement)
+  // ─── TOGGLE CAN PROCESS ────────────────────────────────────────────────────
   static async toggleCanProcess(agentId, can_process, currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé");
@@ -230,11 +200,10 @@ class AgentService {
     if (!existingAgent) {
       throw new Error("Agent non trouvé");
     }
-    const updated = await AgentModel.updateCanProcess(agentId, can_process);
-    return updated;
+    return await AgentModel.updateCanProcess(agentId, can_process);
   }
 
-  // SOFT DELETE (admin seulement)
+  // ─── SOFT DELETE ───────────────────────────────────────────────────────────
   static async deleteAgent(agentId, currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé");
@@ -247,7 +216,7 @@ class AgentService {
     return { message: "Agent supprimé avec succès" };
   }
 
-  // HARD DELETE (admin seulement)
+  // ─── HARD DELETE ───────────────────────────────────────────────────────────
   static async hardDeleteAgent(agentId, currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé");
@@ -267,7 +236,7 @@ class AgentService {
     }
   }
 
-  // GET AGENTS BY COUNTRY (admin et semi-admin)
+  // ─── GET BY COUNTRY ────────────────────────────────────────────────────────
   static async getAgentsByCountry(country_id, currentUserRole) {
     if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
       throw new Error("Non autorisé");
@@ -280,7 +249,7 @@ class AgentService {
     return { country, agents };
   }
 
-  // COUNT AGENTS BY COUNTRY (admin et semi-admin)
+  // ─── COUNT BY COUNTRY ──────────────────────────────────────────────────────
   static async countAgentsByCountry(country_id, currentUserRole) {
     if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
       throw new Error("Non autorisé");
@@ -297,35 +266,36 @@ class AgentService {
     };
   }
 
+  // ─── GLOBAL STATS ──────────────────────────────────────────────────────────
   static async getGlobalAgentStats(currentUser) {
     const { role } = currentUser;
-    if (role !== 'admin' && role !== 'semi-admin') {
-      throw new Error('Non autorisé : seuls les administrateurs et semi-administrateurs peuvent consulter ces statistiques');
+    if (role !== "admin" && role !== "semi-admin") {
+      throw new Error("Non autorisé : seuls les administrateurs et semi-administrateurs peuvent consulter ces statistiques");
     }
     return await AgentModel.getGlobalStats();
   }
 
-  // Admin : tous les agents (avec inactifs)
+  // ─── ADMIN : tous les agents ───────────────────────────────────────────────
   static async getAllAgentsForAdmin(currentUserRole) {
     if (currentUserRole !== "admin") {
       throw new Error("Non autorisé");
     }
-    return await AgentModel.findAllForAdmin(); // déjà existante
+    return await AgentModel.findAllForAdmin();
   }
 
-  // Admin ou semi-admin : agents actifs uniquement
+  // ─── STAFF : agents actifs ─────────────────────────────────────────────────
   static async getActiveAgentsForStaff(currentUserRole) {
     if (currentUserRole !== "admin" && currentUserRole !== "semi-admin") {
       throw new Error("Non autorisé");
     }
-    return await AgentModel.findAllForSemiAdmin(); // retourne déjà les actifs
+    return await AgentModel.findAllForSemiAdmin();
   }
 
-  // Public : agents actifs (champs limités)
+  // ─── PUBLIC : agents actifs (champs limités) ───────────────────────────────
   static async getActiveAgentsPublic() {
     const result = await db.query(`
       SELECT a.id, a.name, a.country_id, a.can_process,
-            c.name as country_name, c.code as country_code
+             c.name as country_name, c.code as country_code
       FROM agents a
       LEFT JOIN countries c ON a.country_id = c.id
       WHERE a.deleted_at IS NULL AND a.is_active = true
@@ -333,7 +303,6 @@ class AgentService {
     `);
     return result.rows;
   }
-
 }
 
 module.exports = AgentService;

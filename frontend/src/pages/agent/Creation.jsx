@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import PhoneNote from '../../components/PhoneNote';
 import {
   Send, ArrowRight, Check, AlertCircle, RefreshCw, X, ChevronDown, CheckCircle
 } from 'lucide-react';
@@ -316,6 +317,8 @@ export default function AgentCreate() {
 
   const senderCountry = getCountryById(formData.senderCountryId);
   const receiverCountry = getCountryById(formData.receiverCountryId);
+  const methodName = (countryId, methodId) =>
+    getMethodsByCountry(countryId).find((m) => String(m.id) === String(methodId))?.method;
   const senderPaymentMethods = getMethodsByCountry(formData.senderCountryId);
   const receiverPaymentMethods = getMethodsByCountry(formData.receiverCountryId);
 
@@ -506,6 +509,7 @@ export default function AgentCreate() {
                 </div>
               </div>
               {errors.senderPhone && <p className="mt-1 text-sm text-red-600">{errors.senderPhone}</p>}
+              <PhoneNote prefix={senderCountry?.phone_prefix} value={formData.senderPhone} role="client-sender" method={methodName(formData.senderCountryId, formData.senderPaymentMethodId)} />
             </div>
 
             <div>
@@ -585,6 +589,7 @@ export default function AgentCreate() {
                 </div>
               </div>
               {errors.receiverPhone && <p className="mt-1 text-sm text-red-600">{errors.receiverPhone}</p>}
+              <PhoneNote prefix={receiverCountry?.phone_prefix} value={formData.receiverPhone} role="client-receiver" method={methodName(formData.receiverCountryId, formData.receiverPaymentMethodId)} />
             </div>
 
             <div>

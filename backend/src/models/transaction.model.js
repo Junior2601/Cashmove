@@ -108,7 +108,7 @@ const Transaction = {
         CASE 
           WHEN t.processed_by_type = 'agent' THEN ag.name
           WHEN t.processed_by_type = 'admin' THEN adm.name
-          WHEN t.processed_by_type = 'semi_admin' THEN sa.name
+          WHEN t.processed_by_type = 'semi-admin' THEN sa.name
           ELSE NULL
         END as processed_by_name
       FROM transactions t
@@ -122,7 +122,7 @@ const Transaction = {
       LEFT JOIN authorized_numbers an ON an.id = t.authorized_number_id
       LEFT JOIN agents ag ON ag.id = t.processed_by_id AND t.processed_by_type = 'agent'
       LEFT JOIN admins adm ON adm.id = t.processed_by_id AND t.processed_by_type = 'admin'
-      LEFT JOIN semi_admins sa ON sa.id = t.processed_by_id AND t.processed_by_type = 'semi_admin'
+      LEFT JOIN semi_admins sa ON sa.id = t.processed_by_id AND t.processed_by_type = 'semi-admin'
       WHERE t.id = $1
     `;
 
@@ -141,55 +141,97 @@ const Transaction = {
   findByAgentId: async (agentId, filters = {}, page = 1, limit = 10) => {
   const offset = (page - 1) * limit;
 
-  let countQuery = `
-    SELECT COUNT(*) as total
-    FROM v_transaction_details 
-    WHERE agent_id = $1
-  `;
-  let dataQuery = `
-    SELECT * FROM v_transaction_details 
-    WHERE agent_id = $1
-  `;
-
-  // filterValues contient agentId + filtres optionnels (sans limit/offset)
-  const filterValues = [agentId];
+  // Paramètres dynamiques : $1 = agentId, puis filtres optionnels
+  const values = [agentId];
   let paramIndex = 2;
 
+  const filterClauses = [];
   if (filters.status) {
-    countQuery += ` AND status = $${paramIndex}`;
-    dataQuery  += ` AND status = $${paramIndex}`;
-    filterValues.push(filters.status);
+    filterClauses.push(`AND t.status = $${paramIndex}`);
+    values.push(filters.status);
     paramIndex++;
   }
-
   if (filters.from_date) {
-    countQuery += ` AND created_at >= $${paramIndex}`;
-    dataQuery  += ` AND created_at >= $${paramIndex}`;
-    filterValues.push(filters.from_date);
+    filterClauses.push(`AND t.created_at >= $${paramIndex}`);
+    values.push(filters.from_date);
     paramIndex++;
   }
-
   if (filters.to_date) {
-    countQuery += ` AND created_at <= $${paramIndex}`;
-    dataQuery  += ` AND created_at <= $${paramIndex}`;
-    filterValues.push(filters.to_date);
+    filterClauses.push(`AND t.created_at <= $${paramIndex}`);
+    values.push(filters.to_date);
     paramIndex++;
   }
 
-  // COUNT reçoit uniquement les filtres (pas limit/offset)
-  const countResult = await db.query(countQuery, filterValues);
+  const filterSQL = filterClauses.join(" ");
+
+  // ── Requête principale ────────────────────────────────────────────────────
+  // Une seule requête qui couvre les 3 cas :
+  //   A) Transaction assignée à l'agent sans aucune redirection   → badge aucun
+  //   B) Transaction assignée à l'agent VIA redirection acceptée  → badge indigo "Redirection"
+  //   C) Transaction que l'agent a redirigée vers un autre        → badge orange "Redirigé"
+  //
+  // On joint directement sur transactions (pas la vue) pour avoir assigned_agent_id,
+  // puis on enrichit avec les colonnes de v_transaction_details via JOIN.
+  //
+  // redir_received = la redirection la plus récente reçue par cet agent (to_agent_id)
+  // redir_sent     = la redirection la plus récente envoyée par cet agent (from_agent_id)
+
+  const baseQuery = `
+    SELECT
+      vtd.*,
+      redir_received.id        AS redirection_id,
+      redir_received.status    AS redirection_status,
+      (redir_sent.id IS NOT NULL AND t.assigned_agent_id <> $1) AS is_redirected_away
+    FROM transactions t
+    JOIN v_transaction_details vtd ON vtd.id = t.id
+
+    -- Redirection reçue par cet agent (il est to_agent_id)
+    LEFT JOIN LATERAL (
+      SELECT r.id, r.status
+      FROM redirections r
+      WHERE r.transaction_id = t.id
+        AND r.to_agent_id    = $1
+        AND r.status         IN ('pending', 'accepted')
+      ORDER BY r.created_at DESC
+      LIMIT 1
+    ) redir_received ON true
+
+    -- Redirection envoyée par cet agent (il est from_agent_id)
+    LEFT JOIN LATERAL (
+      SELECT r.id
+      FROM redirections r
+      WHERE r.transaction_id = t.id
+        AND r.from_agent_id  = $1
+      ORDER BY r.created_at DESC
+      LIMIT 1
+    ) redir_sent ON true
+
+    WHERE (
+      t.assigned_agent_id = $1          -- assigné directement ou après acceptation
+      OR redir_sent.id IS NOT NULL       -- a redirigé cette transaction
+    )
+    ${filterSQL}
+  `;
+
+  const countResult = await db.query(
+    `SELECT COUNT(*) AS total FROM (${baseQuery}) sub`,
+    values
+  );
   const total = parseInt(countResult.rows[0].total, 10);
 
-  // DATA reçoit filtres + pagination
-  dataQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-  const dataResult = await db.query(dataQuery, [...filterValues, limit, offset]);
+  const dataResult = await db.query(
+    `SELECT * FROM (${baseQuery}) sub
+     ORDER BY created_at DESC
+     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+    [...values, limit, offset]
+  );
 
   return {
     rows: dataResult.rows,
     total,
     page,
     limit,
-    totalPages: Math.ceil(total / limit)
+    totalPages: Math.ceil(total / limit),
   };
   },
 
@@ -517,7 +559,7 @@ const Transaction = {
     const query = `
       SELECT
         ROUND(
-          100.0 * COUNT(*) FILTER (WHERE processed_by_id = $1 AND processed_by_type = 'semi_admin') / 
+          100.0 * COUNT(*) FILTER (WHERE processed_by_id = $1 AND processed_by_type = 'semi-admin') / 
           NULLIF(COUNT(*) FILTER (WHERE status = 'effectuee'), 0),
           2
         ) AS percentage

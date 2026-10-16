@@ -4,11 +4,16 @@ import TrackingForm from '../../components/public/TrackingForm';
 import ServiceClient from '../../components/public/ServiceClient';
 import ConversionCalculator from '../../components/public/ConversionCalculator';
 import { Send, Search, HeadphonesIcon, Calculator, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import heroImage from '../../assets/fond.png';
 import votreLogo from '../../assets/logo.png';
 
 export default function HomePage() {
-  const [activeSection, setActiveSection] = useState('transaction');
+  // ?section=suivi : raccourci « Suivre une transaction » de l'app installée
+  const [activeSection, setActiveSection] = useState(() => {
+    const section = new URLSearchParams(window.location.search).get('section');
+    return ['transaction', 'suivi', 'service', 'calculatrice'].includes(section) ? section : 'transaction';
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -181,6 +186,13 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="relative h-96 md:h-[500px] overflow-hidden bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800">
+        {/* V2 : accès au compte client (le parcours invité reste disponible) */}
+        <Link
+          to="/connexion"
+          className="absolute right-4 top-4 z-20 rounded-full bg-yellow-400 px-4 py-2 text-sm font-bold text-blue-950 shadow-lg hover:bg-yellow-300"
+        >
+          Se connecter
+        </Link>
         <div className="relative w-full h-full">
           {carouselSlides.map((slide, index) => (
             <div

@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import api from "../../api/axios";
+import useStaffLive from "../../realtime/useStaffLive";
+import LiveNotice from "../../realtime/LiveNotice";
 import {
   Search,
   Filter,
@@ -32,16 +35,55 @@ import {
   ShieldOff,
 } from "lucide-react";
 
+// ─── Enveloppe commune des modales ───────────────────────────────────────────
+// Rendue via un portail sur document.body : indispensable, car un ancêtre
+// portant une transform (sidebar mobile en translate-x, etc.) devient le
+// référentiel de position:fixed et décale la modale hors de l'écran.
+// Verrouille aussi le scroll de la page et ferme sur Échap.
+function ModalShell({ open, onClose, children }) {
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto overscroll-contain"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      <div className="w-full max-w-md my-auto" onMouseDown={(e) => e.stopPropagation()}>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ─── Modal de confirmation ───────────────────────────────────────────────────
 function ConfirmModal({
   open, onClose, onConfirm, title, message,
   confirmLabel, confirmColor, loading,
   reasonRequired, reason, setReason,
 }) {
-  if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+    <ModalShell open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-6 border border-gray-100">
         <div className="flex items-start gap-3 mb-4">
           <AlertCircle
             size={22}
@@ -94,7 +136,7 @@ function ConfirmModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -102,23 +144,23 @@ function ConfirmModal({
 function TransactionDetailModal({
   transaction, onClose, onFinalize, onCancel, actionLoading, canProcess,
 }) {
-  if (!transaction) return null;
-
-  const canFinalize = transaction.status === "validee";
-  const canCancel   = transaction.status === "en_attente" || transaction.status === "validee";
-
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }).catch((err) => console.error("Erreur copie :", err));
   };
 
+  if (!transaction) return null;
+
+  const canFinalize = transaction.status === "validee";
+  const canCancel   = transaction.status === "en_attente" || transaction.status === "validee";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden border border-gray-100">
+    <ModalShell open={!!transaction} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] overflow-hidden border border-gray-100 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center gap-2 min-w-0">
@@ -135,15 +177,19 @@ function TransactionDetailModal({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        {/* Body scrollable */}
+        <div className="p-4 space-y-3 flex-1 overflow-y-auto overscroll-contain">
           {/* Avertissement si l'agent ne peut pas traiter */}
           {!canProcess && canFinalize && (
             <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-lg text-xs">
               <ShieldOff size={14} className="flex-shrink-0 mt-0.5" />
-              <span>Vous n'avez pas l'autorisation de traiter des transactions. Contactez un administrateur.</span>
+              <span>
+                Vous n'avez pas l'autorisation de traiter des transactions.
+                Contactez un administrateur.
+              </span>
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3">
             <InfoItem label="De" value={transaction.from_country} />
             <InfoItem label="Vers" value={transaction.to_country} />
@@ -158,6 +204,7 @@ function TransactionDetailModal({
             <InfoItem label="Méthode envoi" value={transaction.sender_method} />
             <InfoItem label="Méthode réception" value={transaction.receiver_method} />
             <InfoItem label="Tél. expéditeur" value={transaction.sender_phone} />
+
             {/* Destinataire avec copie */}
             <div>
               <p className="text-xs text-gray-400 mb-0.5">Tél. destinataire</p>
@@ -178,6 +225,7 @@ function TransactionDetailModal({
                 )}
               </div>
             </div>
+
             <InfoItem label="Numéro autorisé" value={transaction.authorized_number} />
             <InfoItem
               label="Statut"
@@ -224,7 +272,7 @@ function TransactionDetailModal({
           </div>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -233,18 +281,23 @@ function RedirectionActionModal({
   open, onClose, onAccept, onReject, redirection, loading,
 }) {
   if (!open || !redirection) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100">
+    <ModalShell open={open} onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full p-6 border border-gray-100">
         <div className="flex items-start gap-3 mb-4">
           <Share2 size={22} className="text-indigo-500 flex-shrink-0 mt-0.5" />
           <div>
             <h3 className="text-base font-semibold text-gray-900">Redirection reçue</h3>
             <p className="text-sm text-gray-500 mt-1">
-              Transaction <span className="font-mono font-medium text-indigo-600">{redirection.tracking_code}</span>
+              Transaction{" "}
+              <span className="font-mono font-medium text-indigo-600">
+                {redirection.tracking_code}
+              </span>
             </p>
           </div>
         </div>
+
         <div className="bg-gray-50 rounded-xl p-3 text-sm space-y-1.5 mb-5">
           <div className="flex justify-between">
             <span className="text-gray-500">Raison</span>
@@ -255,6 +308,7 @@ function RedirectionActionModal({
             <span className="font-semibold text-gray-900">{fmt(redirection.receive_amount)}</span>
           </div>
         </div>
+
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
@@ -283,7 +337,7 @@ function RedirectionActionModal({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 }
 
@@ -459,6 +513,9 @@ export default function AgentTransactions() {
     return () => clearTimeout(timer);
   }, [filters, pagination.limit, fetchTransactions]);
 
+  // Temps réel (cahier V2 · NOT-05) : la liste se met à jour sans recharger la page
+  const live = useStaffLive(() => fetchTransactions(pagination.page));
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleFinalizeConfirm = async () => {
     const tx = finalizeModal.transaction;
@@ -555,6 +612,7 @@ export default function AgentTransactions() {
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-3 sm:p-4 lg:p-6 bg-gray-50 min-h-screen">
+      <LiveNotice notice={live.notice} onClose={live.dismiss} />
 
       {/* ── Modales ── */}
       <ConfirmModal
@@ -867,23 +925,30 @@ export default function AgentTransactions() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {transactions.map((t) => {
-                    const canFinalize = t.status === "validee";
-                    const canCancel   =
-                      t.status === "en_attente" || t.status === "validee";
-                    const isRedirected = !!t.redirection_id && t.redirection_status === "pending";
+                    const isRedirectedAway        = t.is_redirected_away === true;
+                    const canFinalize             = !isRedirectedAway && t.status === "validee";
+                    const canCancel               = !isRedirectedAway && (t.status === "en_attente" || t.status === "validee");
+                    const isRedirectedIncoming    = !isRedirectedAway && !!t.redirection_id;
+                    const isRedirectedPending     = isRedirectedIncoming && t.redirection_status === "pending";
 
                     return (
-                      <tr key={t.id} className="hover:bg-gray-50 transition-colors">
+                      <tr key={`${t.id}-${isRedirectedAway ? "away" : "mine"}`} className="hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-2">
                             <Hash size={13} className="text-gray-400" />
                             <span className="font-mono text-blue-600 font-medium text-sm">
                               {t.tracking_code || "N/A"}
                             </span>
-                            {isRedirected && (
+                            {isRedirectedAway && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border border-orange-200">
+                                <Share2 size={9} />
+                                Redirigé
+                              </span>
+                            )}
+                            {isRedirectedIncoming && (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 border border-indigo-200">
                                 <Share2 size={9} />
-                                Redir.
+                                Redirection
                               </span>
                             )}
                           </div>
@@ -931,7 +996,7 @@ export default function AgentTransactions() {
                             </button>
 
                             {/* Redirection en attente : accepter/refuser */}
-                            {isRedirected && (
+                            {isRedirectedPending && (
                               <button
                                 title="Gérer la redirection reçue"
                                 onClick={() =>
@@ -992,13 +1057,15 @@ export default function AgentTransactions() {
           {/* ── CARTES mobile ── */}
           <div className="md:hidden space-y-3">
             {transactions.map((t) => {
-              const canFinalize = t.status === "validee";
-              const canCancel   = t.status === "en_attente" || t.status === "validee";
-              const isRedirected = !!t.redirection_id && t.redirection_status === "pending";
+              const isRedirectedAway        = t.is_redirected_away === true;
+              const canFinalize             = !isRedirectedAway && t.status === "validee";
+              const canCancel               = !isRedirectedAway && (t.status === "en_attente" || t.status === "validee");
+              const isRedirectedIncoming    = !isRedirectedAway && !!t.redirection_id;
+              const isRedirectedPending     = isRedirectedIncoming && t.redirection_status === "pending";
 
               return (
                 <div
-                  key={t.id}
+                  key={`${t.id}-${isRedirectedAway ? "away" : "mine"}`}
                   className="bg-white rounded-xl shadow-sm p-3 border border-gray-200"
                 >
                   <div className="flex justify-between items-start mb-3">
@@ -1007,9 +1074,16 @@ export default function AgentTransactions() {
                       <span className="font-mono text-blue-600 font-medium text-sm truncate">
                         {t.tracking_code || "N/A"}
                       </span>
-                      {isRedirected && (
+                      {isRedirectedAway && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700 border border-orange-200 flex-shrink-0">
+                          <Share2 size={9} />
+                          Redirigé
+                        </span>
+                      )}
+                      {isRedirectedIncoming && (
                         <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 border border-indigo-200 flex-shrink-0">
                           <Share2 size={9} />
+                          Redirection
                         </span>
                       )}
                     </div>
@@ -1067,7 +1141,7 @@ export default function AgentTransactions() {
                       <Eye size={15} />
                     </button>
 
-                    {isRedirected && (
+                    {isRedirectedPending && (
                       <button
                         onClick={() =>
                           setRedirectionModal({ open: true, redirection: { ...t, redirection_id: t.redirection_id } })

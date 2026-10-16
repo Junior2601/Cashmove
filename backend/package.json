@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "db:reset-local": "node scripts/reset-local-db.js",
+    "db:check": "node scripts/migrate.js",
+    "db:migrate": "node scripts/migrate.js --apply"
   },
   "keywords": [],
   "author": "",
@@ -22,7 +25,9 @@
     "nodemailer": "^8.0.5",
     "pg": "^8.20.0",
     "recharts": "^3.8.1",
-    "resend": "^6.12.4"
+    "resend": "^6.12.4",
+    "socket.io": "^4.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

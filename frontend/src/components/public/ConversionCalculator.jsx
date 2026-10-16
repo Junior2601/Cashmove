@@ -8,8 +8,7 @@ export default function ConversionCalculator() {
   const [amount, setAmount] = useState(1000);
   const [result, setResult] = useState({
     convertedAmount: 0,
-    rate: 0,
-    commissionPercent: 0.75
+    rate: 0
   });
   const [currencies, setCurrencies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -43,13 +42,16 @@ export default function ConversionCalculator() {
   };
 
   // GET /api/rates/active/pair/:from_currency_id/:to_currency_id
+  // Conversion au taux pur : aucune commission, aucun frais de retrait
+  // ni d'envoi n'est déduit ici. Ces frais dépendent du moyen de paiement,
+  // que la calculatrice ne connaît pas.
   const calculateExchange = async (amount, fromCurrencyId, toCurrencyId) => {
     if (!fromCurrencyId || !toCurrencyId || !amount || amount <= 0) {
-      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
+      return { convertedAmount: 0, rate: 0 };
     }
 
     if (fromCurrencyId === toCurrencyId) {
-      return { convertedAmount: amount, rate: 1, commissionPercent: 0 };
+      return { convertedAmount: amount, rate: 1 };
     }
 
     try {
@@ -66,21 +68,15 @@ export default function ConversionCalculator() {
 
       const rateData = response.data.data;
       const rate = parseFloat(rateData.rate) || 0;
-      const commissionPercent = parseFloat(rateData.commission_percent) || 0.75;
-
-      const amountAfterCommission = amount * (1 - commissionPercent / 100);
-      const convertedAmount = amountAfterCommission * rate;
 
       return {
-        convertedAmount,
-        rate,
-        commissionPercent,
-        rawAmount: amount * rate
+        convertedAmount: amount * rate,
+        rate
       };
     } catch (err) {
       console.error('Erreur calcul taux:', err);
       setError(`Taux non disponible: ${err.response?.data?.message || err.message}`);
-      return { convertedAmount: 0, rate: 0, commissionPercent: 0.75 };
+      return { convertedAmount: 0, rate: 0 };
     } finally {
       setCalculating(false);
     }
@@ -173,7 +169,7 @@ export default function ConversionCalculator() {
                 <option value="">Sélectionnez une devise</option>
                 {currencies.map(currency => (
                   <option key={currency.id} value={currency.id}>
-                    {currency.name} ({currency.symbol || currency.code})
+                    {currency.code} ({currency.symbol})
                   </option>
                 ))}
               </select>
@@ -242,7 +238,7 @@ export default function ConversionCalculator() {
                   .filter(currency => currency.id.toString() !== fromCurrency)
                   .map(currency => (
                     <option key={currency.id} value={currency.id}>
-                      {currency.name} ({currency.symbol || currency.code})
+                      {currency.code} ({currency.symbol})
                     </option>
                   ))
                 }
@@ -280,11 +276,10 @@ export default function ConversionCalculator() {
                   1 {fromCurrencyData?.symbol || fromCurrencyData?.code} ={' '}
                   {formatRate(result.rate)} {toCurrencyData?.symbol || toCurrencyData?.code}
                 </p>
-                {result.commissionPercent > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Commission: {result.commissionPercent}% incluse
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Montant indicatif, calculé au taux du jour. Le montant définitif
+                  dépend du moyen de paiement choisi lors du transfert.
+                </p>
               </div>
             )}
           </div>
@@ -292,7 +287,7 @@ export default function ConversionCalculator() {
 
         {/* Avantages */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h5 className="font-semibold text-blue-900 mb-3">Avantages TransferBridge</h5>
+          <h5 className="font-semibold text-blue-900 mb-3">Avantages MoveCash</h5>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div className="text-center">
               <p className="font-medium text-blue-800">Taux Compétitifs</p>
@@ -300,7 +295,7 @@ export default function ConversionCalculator() {
             </div>
             <div className="text-center">
               <p className="font-medium text-blue-800">Frais Transparents</p>
-              <p className="text-blue-600">Commission de 0,75%</p>
+              <p className="text-blue-600">Aucun frais caché</p>
             </div>
             <div className="text-center">
               <p className="font-medium text-blue-800">Transfert Rapide</p>

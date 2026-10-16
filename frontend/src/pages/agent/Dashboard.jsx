@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
+import useStaffLive from "../../realtime/useStaffLive";
+import LiveNotice from "../../realtime/LiveNotice";
 
 // ─────────────────────────────────────────────────────────
 // Helpers
@@ -204,6 +206,9 @@ export default function AgentDashboard() {
     fetchAll();
   }, [fetchAll]);
 
+  // Temps réel (cahier V2 · NOT-05) : stats et dernières transactions à jour
+  const live = useStaffLive(fetchAll);
+
   // ── Données dérivées ──────────────────────────────────
   // Soldes non nuls (champ `amount` dans balance.model → colonne `amount`)
   const nonZeroBalances = balances.filter((b) => parseFloat(b.amount || 0) > 0);
@@ -264,6 +269,7 @@ export default function AgentDashboard() {
   // ── Rendu principal ───────────────────────────────────
   return (
     <div className="space-y-6">
+      <LiveNotice notice={live.notice} onClose={live.dismiss} />
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-3">
