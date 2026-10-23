@@ -878,11 +878,13 @@ BEGIN
     SELECT * INTO v_send_fee
     FROM compute_sending_fee(v_receive_amount, p_receiver_method_id);
 
+    -- Agent choisi au hasard parmi ceux qui ont un numéro agréé actif dans le
+    -- pays d'envoi pour le moyen de paiement du client, QUEL QUE SOIT le pays
+    -- de l'agent (le client paie sur ce numéro).
     SELECT a.* INTO v_agent
     FROM agents a
     JOIN authorized_numbers an ON an.agent_id = a.id
-    WHERE a.country_id          = p_from_country_id
-      AND an.country_id         = p_from_country_id
+    WHERE an.country_id         = p_from_country_id
       AND an.payment_method_id  = p_sender_method_id
       AND an.is_active          = true
       AND an.deleted_at         IS NULL
@@ -897,7 +899,8 @@ BEGIN
     WHERE agent_id          = v_agent.id
       AND country_id        = p_from_country_id
       AND payment_method_id = p_sender_method_id
-      AND is_active = true
+      AND is_active         = true
+      AND deleted_at        IS NULL
     LIMIT 1;
 
     v_tracking_code := generate_tracking_code();

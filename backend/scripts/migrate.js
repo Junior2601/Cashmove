@@ -61,6 +61,7 @@ const MARKERS = {
   "005_staff_push.sql": `SELECT to_regclass('public.staff_push_subscriptions') IS NOT NULL`,
   "006_profit_rules.sql": `SELECT to_regclass('public.transaction_profits') IS NOT NULL`,
   "007_notification_settings.sql": `SELECT to_regclass('public.staff_notification_settings') IS NOT NULL`,
+  "008_agent_any_country.sql": `SELECT position('a.country_id' IN prosrc) = 0 FROM pg_proc WHERE proname = 'create_transaction'`,
 };
 
 const ask = (q) =>
