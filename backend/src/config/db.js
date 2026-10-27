@@ -5,22 +5,19 @@ types.setTypeParser(1114, (val) => val);
 types.setTypeParser(1184, (val) => val);
 
 const { Pool } = require("pg");
+const { readDatabaseUrl, useSsl, withParams } = require("./dbUrl");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_CONN_STRING =
-  process.env.DATABASE_URL ||
-  "postgresql://paullan:Op5RfNTEAxtBK5KJyP7SUP7okYW1MWGO@dpg-d71d4fh5pdvs73c668b0-a.frankfurt-postgres.render.com/majmovecash";
+const BASE_CONN_STRING = readDatabaseUrl();
 
-const CONN_STRING =
-  BASE_CONN_STRING +
-  "?keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5" +
-  "&options=-c%20timezone%3DAfrica%2FNairobi";
+const CONN_STRING = withParams(
+  BASE_CONN_STRING,
+  "keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=5" +
+    "&options=-c%20timezone%3DAfrica%2FNairobi"
+);
 
-// PostgreSQL local (localhost) : pas de SSL. Render et les autres hébergeurs : SSL.
-// DB_SSL=true|false force le choix si besoin.
-const IS_LOCAL_DB = /@(localhost|127\.0\.0\.1)(:\d+)?\//.test(BASE_CONN_STRING);
-const USE_SSL = process.env.DB_SSL ? process.env.DB_SSL === "true" : !IS_LOCAL_DB;
+const USE_SSL = useSsl(BASE_CONN_STRING);
 
 const POOL_CONFIG = {
   connectionString: CONN_STRING,

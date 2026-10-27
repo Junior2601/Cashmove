@@ -25,9 +25,12 @@ const APPLY = args.includes("--apply");
 const SYNC = args.includes("--sync-functions");
 const YES = args.includes("--yes");
 
-const url = process.env.DATABASE_URL || "";
-if (!url) {
-  console.error("❌ DATABASE_URL manquante");
+const { readDatabaseUrl, useSsl } = require("../src/config/dbUrl");
+let url;
+try {
+  url = readDatabaseUrl();
+} catch (err) {
+  console.error(`❌ ${err.message}`);
   process.exit(1);
 }
 const isLocal = /@(localhost|127\.0\.0\.1)(:\d+)?\//.test(url);
@@ -89,7 +92,7 @@ const dbSqlFunctions = () => {
 };
 
 const run = async () => {
-  const client = new Client({ connectionString: url, ssl: isLocal ? false : { rejectUnauthorized: false } });
+  const client = new Client({ connectionString: url, ssl: useSsl(url) ? { rejectUnauthorized: false } : false });
   await client.connect();
   await client.query("SET client_min_messages = warning");
   await client.query("SET timezone = 'Africa/Nairobi'");
