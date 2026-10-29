@@ -463,6 +463,36 @@ const Transaction = {
     return result.rows[0];
   },
 
+  // Volumes des transactions effectuées, par devise — jamais additionnés entre devises.
+  // Envoyé : devise du pays d'envoi ; reçu : devise du pays de réception.
+  // agentId : seulement les transactions de cet agent (sinon toutes).
+  getVolumesByCurrency: async (agentId = null) => {
+    const params = agentId ? [agentId] : [];
+    const where = `t.status = 'effectuee'${agentId ? " AND t.assigned_agent_id = $1" : ""}`;
+    const { rows } = await db.query(
+      `SELECT 'sent' AS kind, c.code, c.symbol, SUM(t.send_amount) AS amount, COUNT(*) AS count
+       FROM transactions t
+       JOIN countries co ON co.id = t.from_country_id
+       JOIN currencies c ON c.id = co.currency_id
+       WHERE ${where}
+       GROUP BY c.code, c.symbol
+       UNION ALL
+       SELECT 'received', c.code, c.symbol, SUM(t.receive_amount), COUNT(*)
+       FROM transactions t
+       JOIN countries co ON co.id = t.to_country_id
+       JOIN currencies c ON c.id = co.currency_id
+       WHERE ${where}
+       GROUP BY c.code, c.symbol
+       ORDER BY 1, 2`,
+      params
+    );
+    const pick = (kind) =>
+      rows
+        .filter((r) => r.kind === kind)
+        .map((r) => ({ code: r.code, symbol: r.symbol, amount: parseFloat(r.amount), count: parseInt(r.count, 10) }));
+    return { sent: pick("sent"), received: pick("received") };
+  },
+
   getChartData: async (period, fromDate, toDate) => {
     let groupByExpr, intervalUnit;
     

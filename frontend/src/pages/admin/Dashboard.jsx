@@ -3,10 +3,21 @@ import api from '../../api/axios';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
+// Montants par devise : des RUB et des XOF ne s'additionnent pas
+function VolumesByCurrency({ items }) {
+  if (!items.length) return '—';
+  return items.map((v) => (
+    <span key={v.code} className={`block whitespace-nowrap tabular-nums ${items.length > 1 ? 'text-base' : ''}`}>
+      {v.amount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {v.code}
+    </span>
+  ));
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({
     total_transactions: 0,
     total_send_amount: 0,
+    sent_volumes: [],
     validated_count: 0,
     completed_count: 0
   });
@@ -32,45 +43,6 @@ export default function Dashboard() {
     return token;
   }, [navigate]);
 
-  // Données mockées pour le graphique (fallback)
-  const getMockChartData = useCallback((period) => {
-    const mockData = {
-      day: [
-        { period: '00:00', count: 12, total_amount: 4500 },
-        { period: '04:00', count: 8, total_amount: 3200 },
-        { period: '08:00', count: 18, total_amount: 6800 },
-        { period: '12:00', count: 22, total_amount: 8900 },
-        { period: '16:00', count: 15, total_amount: 5600 },
-        { period: '20:00', count: 28, total_amount: 11200 },
-      ],
-      week: [
-        { period: 'Lun', count: 85, total_amount: 32000 },
-        { period: 'Mar', count: 72, total_amount: 28000 },
-        { period: 'Mer', count: 98, total_amount: 41000 },
-        { period: 'Jeu', count: 65, total_amount: 26000 },
-        { period: 'Ven', count: 112, total_amount: 45000 },
-        { period: 'Sam', count: 44, total_amount: 18000 },
-        { period: 'Dim', count: 38, total_amount: 15000 },
-      ],
-      month: [
-        { period: 'Sem 1', count: 85, total_amount: 32000 },
-        { period: 'Sem 2', count: 112, total_amount: 45000 },
-        { period: 'Sem 3', count: 78, total_amount: 29000 },
-        { period: 'Sem 4', count: 95, total_amount: 38000 },
-      ]
-    };
-    return mockData[period] || mockData.week;
-  }, []);
-
-  // Données mockées pour la répartition par devise (car endpoint non disponible)
-  const getMockCurrencyData = useCallback(() => [
-    { name: 'EUR', value: 45000 },
-    { name: 'USD', value: 32000 },
-    { name: 'XOF', value: 28000 },
-    { name: 'GBP', value: 15000 },
-    { name: 'CAD', value: 12000 },
-  ], []);
-
   const fetchDashboardData = useCallback(async () => {
     const token = getAuthToken();
     if (!token) return;
@@ -89,23 +61,22 @@ export default function Dashboard() {
       setStats({
         total_transactions: statsData.total_transactions || 0,
         total_send_amount: statsData.total_send_amount || 0,
+        sent_volumes: statsData.volumes?.sent || [],
         completed_count: statsData.completed_count || 0,
         validated_count: statsData.validated_count || 0
       });
+      // Répartition par devise d'envoi : en nombre de transactions effectuées
+      // (des montants en RUB et en XOF ne se comparent pas)
+      setCurrencyData((statsData.volumes?.sent || []).map((v) => ({ name: v.code, value: v.count })));
 
       // 2. Données du graphique → GET /transactions/chart?period=...
       try {
         const chartRes = await api.get(`/transactions/chart?period=${timeFilter}`, config);
         // Le backend retourne { success: true, data: [...] } avec des objets { period, count, total_amount }
-        const rawData = chartRes.data?.data || [];
-        if (rawData.length) {
-          setChartData(rawData);
-        } else {
-          setChartData(getMockChartData(timeFilter));
-        }
+        setChartData(chartRes.data?.data || []);
       } catch (chartErr) {
         console.warn('Erreur chargement graphique:', chartErr);
-        setChartData(getMockChartData(timeFilter));
+        setChartData([]);
       }
 
       // 3. Transactions récentes → GET /transactions/recent?limit=5
@@ -118,10 +89,6 @@ export default function Dashboard() {
         setRecentTransactions([]);
       }
 
-      // 4. Répartition par devise (endpoint non disponible → fallback mock)
-      // Optionnel : on pourrait calculer ces stats à partir des transactions, mais on garde le mock
-      setCurrencyData(getMockCurrencyData());
-
     } catch (err) {
       console.error('Erreur récupération données:', err);
       if (err.response?.status === 401) {
@@ -130,18 +97,19 @@ export default function Dashboard() {
         return;
       }
       setError('Erreur de chargement des données. Veuillez réessayer.');
-      setChartData(getMockChartData(timeFilter));
-      setCurrencyData(getMockCurrencyData());
+      setChartData([]);
+      setCurrencyData([]);
       setStats({
         total_transactions: 0,
         total_send_amount: 0,
+        sent_volumes: [],
         pending_count: 0,
         completed_count: 0
       });
     } finally {
       setLoading(false);
     }
-  }, [getAuthToken, timeFilter, navigate, getMockChartData, getMockCurrencyData]);
+  }, [getAuthToken, timeFilter, navigate]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -272,7 +240,7 @@ export default function Dashboard() {
           { title: 'Total Transactions', value: stats.total_transactions.toLocaleString('fr-FR'), color: 'blue', icon: '📄', bgColor: 'bg-blue-100', borderColor: 'border-blue-500' },
           { title: 'Transactions Validées', value: stats.completed_count.toLocaleString('fr-FR'), color: 'green', icon: '✅', bgColor: 'bg-green-100', borderColor: 'border-green-500' },
           { title: 'En Attente', value: stats.validated_count.toLocaleString('fr-FR'), color: 'yellow', icon: '⏳', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-500' },
-          { title: 'Montant Total', value: `${stats.total_send_amount.toLocaleString('fr-FR')} €`, color: 'purple', icon: '💰', bgColor: 'bg-purple-100', borderColor: 'border-purple-500' }
+          { title: 'Volume envoyé (effectuées)', value: <VolumesByCurrency items={stats.sent_volumes} />, color: 'purple', icon: '💰', bgColor: 'bg-purple-100', borderColor: 'border-purple-500' }
         ].map((card, index) => (
           <div key={index} className={`bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg border-l-4 ${card.borderColor}`}>
             <div className="flex items-center justify-between">
@@ -321,23 +289,22 @@ export default function Dashboard() {
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="period" fontSize={12} />
-                <YAxis yAxisId="left" fontSize={12} />
-                <YAxis yAxisId="right" orientation="right" fontSize={12} />
-                <Tooltip formatter={(value, name) => {
-                  if (name === 'total_amount') return `${value.toLocaleString('fr-FR')} €`;
-                  return value.toLocaleString('fr-FR');
-                }} />
+                <YAxis fontSize={12} allowDecimals={false} />
+                <Tooltip formatter={(value) => Number(value).toLocaleString('fr-FR')} />
                 <Legend />
-                <Line yAxisId="left" type="monotone" dataKey="count" stroke="#0088FE" name="Transactions" strokeWidth={2} dot={{ r: 4 }} />
-                <Line yAxisId="right" type="monotone" dataKey="total_amount" stroke="#00C49F" name="Montant total" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="count" stroke="#0088FE" name="Transactions" strokeWidth={2} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Répartition par devise (mock) */}
+        {/* Répartition par devise d'envoi (transactions effectuées) */}
         <div className="bg-white rounded-xl lg:rounded-2xl p-4 lg:p-6 shadow-lg">
-          <h2 className="text-lg lg:text-xl font-semibold text-gray-900 mb-4 lg:mb-6">Répartition par Devise</h2>
+          <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Répartition par devise d'envoi</h2>
+          <p className="mb-4 text-xs text-gray-500 lg:mb-6 lg:text-sm">Nombre de transactions effectuées</p>
+          {currencyData.length === 0 ? (
+            <p className="flex h-64 items-center justify-center text-sm text-gray-500 lg:h-80">Aucune transaction effectuée pour l'instant</p>
+          ) : (
           <div className="h-64 lg:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -349,6 +316,7 @@ export default function Dashboard() {
                   innerRadius={40}
                   fill="#8884d8"
                   dataKey="value"
+                  nameKey="name"
                   label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   labelLine={false}
                 >
@@ -356,10 +324,12 @@ export default function Dashboard() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => new Intl.NumberFormat('fr-FR').format(value)} />
+                <Tooltip formatter={(value) => `${new Intl.NumberFormat('fr-FR').format(value)} transaction${value > 1 ? 's' : ''}`} />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
+          )}
         </div>
       </div>
 

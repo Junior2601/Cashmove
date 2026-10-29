@@ -6,7 +6,8 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  Users,
+  CircleFadingPlus,
+  Redo2,
   DollarSign,
   RefreshCw,
   Eye,
@@ -17,18 +18,38 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import api from "../../api/axios";
 import useStaffLive from "../../realtime/useStaffLive";
-import LiveNotice from "../../realtime/LiveNotice";
 
 // ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
 const fmt = (n, decimals = 2) => parseFloat(n || 0).toFixed(decimals);
+const money = (amount, code) =>
+  `${Number(amount || 0).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${code}`;
+
+// Une ligne par devise : des RUB et des XOF ne s'additionnent pas
+const AmountsByCurrency = ({ label, items, className, sign = "" }) => (
+  <div className="flex justify-between items-start gap-3">
+    <span className="text-slate-600 text-sm">{label}</span>
+    <div className="text-right">
+      {items?.length ? (
+        items.map((i) => (
+          <p key={i.code} className={`font-semibold tabular-nums ${className}`}>
+            {sign}
+            {money(i.amount, i.code)}
+          </p>
+        ))
+      ) : (
+        <p className="font-semibold text-slate-400">—</p>
+      )}
+    </div>
+  </div>
+);
 
 // ─────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────
 const StatCard = ({ title, value, icon: Icon, color, subtitle }) => (
-  <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-300 group">
+  <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 hover:shadow-md transition-all duration-300 group">
     <div className="flex items-center justify-between">
       <div>
         <p className="text-slate-600 text-sm font-medium mb-1">{title}</p>
@@ -207,7 +228,7 @@ export default function AgentDashboard() {
   }, [fetchAll]);
 
   // Temps réel (cahier V2 · NOT-05) : stats et dernières transactions à jour
-  const live = useStaffLive(fetchAll);
+  useStaffLive(fetchAll);
 
   // ── Données dérivées ──────────────────────────────────
   // Soldes non nuls (champ `amount` dans balance.model → colonne `amount`)
@@ -268,8 +289,7 @@ export default function AgentDashboard() {
 
   // ── Rendu principal ───────────────────────────────────
   return (
-    <div className="space-y-6">
-      <LiveNotice notice={live.notice} onClose={live.dismiss} />
+    <div className="space-y-6 p-3 sm:p-4 lg:p-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -277,8 +297,8 @@ export default function AgentDashboard() {
             <User className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-              Tableau de Bord Agent
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
+              Tableau de bord
             </h1>
             <p className="text-slate-600">
               Connecté en tant que{" "}
@@ -299,7 +319,7 @@ export default function AgentDashboard() {
       {/* ── Cartes statistiques ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Carte solde avec badges par devise */}
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-300 group md:col-span-2 lg:col-span-1">
+        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 hover:shadow-md transition-all duration-300 group md:col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-slate-600 text-sm font-medium mb-1">Soldes</p>
@@ -366,7 +386,7 @@ export default function AgentDashboard() {
       {/* ── Section gains + transactions récentes ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Performance globale */}
-        <div className="lg:col-span-1 bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm">
+        <div className="lg:col-span-1 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600">
               <TrendingUp className="w-5 h-5 text-white" />
@@ -374,29 +394,15 @@ export default function AgentDashboard() {
             <h3 className="font-semibold text-slate-800">Performance globale</h3>
           </div>
           <div className="space-y-4">
-            {/* Volume total envoyé (transactions effectuées) */}
-            <div className="flex justify-between items-center">
-              <span className="text-slate-600 text-sm">Volume envoyé</span>
-              <span className="font-semibold text-blue-600">
-                {fmt(stats?.total_send_amount)} €
-              </span>
-            </div>
-
-            {/* Volume total reçu */}
-            <div className="flex justify-between items-center">
-              <span className="text-slate-600 text-sm">Volume reçu</span>
-              <span className="font-semibold text-slate-700">
-                {fmt(stats?.total_receive_amount)} €
-              </span>
-            </div>
-
-            {/* Commissions du mois toutes devises */}
-            <div className="flex justify-between items-center">
-              <span className="text-slate-600 text-sm">Gains ce mois</span>
-              <span className="font-semibold text-emerald-600">
-                +{fmt(gains?.total_all_currencies)} €
-              </span>
-            </div>
+            {/* Transactions effectuées : envoyé dans la devise d'envoi, reçu dans celle de réception */}
+            <AmountsByCurrency label="Volume envoyé" items={stats?.volumes?.sent} className="text-blue-600" />
+            <AmountsByCurrency label="Volume reçu" items={stats?.volumes?.received} className="text-slate-700" />
+            <AmountsByCurrency
+              label="Gains ce mois"
+              items={nonZeroCommissions.map((g) => ({ code: g.code, amount: g.total_gain }))}
+              className="text-emerald-600"
+              sign="+"
+            />
 
             <div className="pt-3 border-t border-slate-200">
               <div className="flex justify-between items-center">
@@ -409,7 +415,7 @@ export default function AgentDashboard() {
 
         {/* Commissions du mois par devise */}
         {nonZeroCommissions.length > 0 && (
-          <div className="lg:col-span-1 bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm">
+          <div className="lg:col-span-1 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 rounded-lg bg-gradient-to-br from-green-500 to-green-600">
                 <Coins className="w-5 h-5 text-white" />
@@ -427,20 +433,12 @@ export default function AgentDashboard() {
                 />
               ))}
             </div>
-            <div className="mt-4 pt-3 border-t border-slate-200">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-600">Total gains</span>
-                <span className="font-bold text-green-600">
-                  +{fmt(gains?.total_all_currencies)} €
-                </span>
-              </div>
-            </div>
           </div>
         )}
 
         {/* Transactions récentes */}
         <div
-          className={`bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm ${
+          className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5 ${
             nonZeroCommissions.length > 0 ? "lg:col-span-1" : "lg:col-span-2"
           }`}
         >
@@ -475,8 +473,8 @@ export default function AgentDashboard() {
       </div>
 
       {/* ── Actions rapides ── */}
-      <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-slate-200/60 shadow-sm">
-        <h3 className="font-semibold text-slate-800 mb-4">Actions Rapides</h3>
+      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
+        <h3 className="font-semibold text-slate-800 mb-4">Actions rapides</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             to="/agent/transactions"
@@ -486,34 +484,34 @@ export default function AgentDashboard() {
               <RefreshCw className="w-5 h-5" />
             </div>
             <div>
-              <p className="font-medium text-slate-800">Gérer Transactions</p>
+              <p className="font-medium text-slate-800">Traiter les transactions</p>
               <p className="text-sm text-slate-600">Voir et valider</p>
             </div>
           </Link>
 
           <Link
-            to="/agent/balances"
+            to="/agent/create"
             className="flex items-center gap-3 p-4 border border-slate-200 rounded-xl hover:border-green-300 hover:bg-green-50/50 transition-all duration-200 group"
           >
             <div className="p-2 rounded-lg bg-green-100 text-green-600 group-hover:bg-green-200 transition-colors">
-              <Wallet className="w-5 h-5" />
+              <CircleFadingPlus className="w-5 h-5" />
             </div>
             <div>
-              <p className="font-medium text-slate-800">Mes Fonds</p>
-              <p className="text-sm text-slate-600">Consulter le solde</p>
+              <p className="font-medium text-slate-800">Nouveau transfert</p>
+              <p className="text-sm text-slate-600">Créer pour un client au guichet</p>
             </div>
           </Link>
 
           <Link
-            to="/agent/history"
+            to="/agent/redirections"
             className="flex items-center gap-3 p-4 border border-slate-200 rounded-xl hover:border-purple-300 hover:bg-purple-50/50 transition-all duration-200 group"
           >
             <div className="p-2 rounded-lg bg-purple-100 text-purple-600 group-hover:bg-purple-200 transition-colors">
-              <Users className="w-5 h-5" />
+              <Redo2 className="w-5 h-5" />
             </div>
             <div>
-              <p className="font-medium text-slate-800">Historique</p>
-              <p className="text-sm text-slate-600">Toutes les activités</p>
+              <p className="font-medium text-slate-800">Redirections</p>
+              <p className="text-sm text-slate-600">Proposées et reçues</p>
             </div>
           </Link>
         </div>

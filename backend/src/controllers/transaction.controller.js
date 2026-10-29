@@ -192,6 +192,7 @@ const getMyStats = async (req, res) => {
         cancelled_count:      parseInt(stats.cancelled_count, 10),
         total_send_amount:    parseFloat(stats.total_send_amount),
         total_receive_amount: parseFloat(stats.total_receive_amount),
+        volumes:              stats.volumes, // { sent: [{ code, symbol, amount, count }], received: [...] }
       },
     });
   } catch (err) {

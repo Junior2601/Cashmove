@@ -160,7 +160,8 @@ const createAgentTransactionService = async (agentId, data) => {
 };
 
 const getDashboardStats = async () => {
-  return await Transaction.getStats();
+  const [stats, volumes] = await Promise.all([Transaction.getStats(), Transaction.getVolumesByCurrency()]);
+  return { ...stats, volumes };
 };
 
 const getChartData = async (period, from, to) => {
@@ -202,7 +203,11 @@ const getSemiAdminShare = async (semiAdminId) => {
 };
 
 const getAgentStats = async (agentId) => {
-  return await Transaction.getStatsByAgentId(agentId);
+  const [stats, volumes] = await Promise.all([
+    Transaction.getStatsByAgentId(agentId),
+    Transaction.getVolumesByCurrency(agentId),
+  ]);
+  return { ...stats, volumes };
 };
 
 const getLastFiveTransactions = async () => {
