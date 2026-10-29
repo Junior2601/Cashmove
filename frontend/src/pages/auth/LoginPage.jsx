@@ -76,7 +76,7 @@ export default function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-gray-50 px-4 py-[max(1.5rem,env(safe-area-inset-top))]">
       <div className="w-full max-w-[420px]">
         <div className="mb-6 flex flex-col items-center text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-dotted border-yellow-400 bg-blue-700 p-2">
+          <span className="mc-logo relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-dotted border-yellow-400 bg-blue-700 p-2">
             <img src={logo} alt="" className="h-full w-full object-contain" />
           </span>
           <p className="mt-3 text-2xl font-extrabold tracking-tight text-gray-900">

@@ -134,7 +134,7 @@ export default function Login() {
         )}
 
         <div className="mt-8 flex flex-col items-center">
-          <span className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-dotted border-yellow-300 bg-white/10 p-3">
+          <span className="mc-logo relative flex h-24 w-24 items-center justify-center rounded-full border-2 border-dotted border-yellow-300 bg-white/10 p-3">
             <img src={logo} alt="" className="h-full w-full object-contain" />
           </span>
           <p className="mt-4 text-3xl font-extrabold tracking-tight">

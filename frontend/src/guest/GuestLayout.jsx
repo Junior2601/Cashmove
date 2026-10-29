@@ -24,7 +24,7 @@ export default function GuestLayout() {
       <header className="sticky top-0 z-30 border-b border-black/5 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <Link to="/" className="flex items-center gap-2.5" aria-label="MoveCash, accueil">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-dotted border-yellow-400 bg-blue-700 p-1">
+            <span className="mc-logo relative flex h-9 w-9 items-center justify-center rounded-full border-2 border-dotted border-yellow-400 bg-blue-700 p-1">
               <img src={logo} alt="" className="h-full w-full object-contain" />
             </span>
             <span className="text-xl font-extrabold tracking-tight">
