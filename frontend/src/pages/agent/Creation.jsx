@@ -448,7 +448,7 @@ export default function AgentCreate() {
 
   // ── Render ──
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-3 sm:p-4 lg:p-6">
 
       {/* Bandeau de succès */}
       {successResult && (

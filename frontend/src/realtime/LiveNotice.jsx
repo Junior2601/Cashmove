@@ -8,7 +8,8 @@ export default function LiveNotice({ notice, onClose }) {
   if (!notice) return null;
   // Portail sur body : un ancêtre avec transform (layout du back-office) fausserait position:fixed
   return createPortal(
-    <div className="fixed bottom-4 right-4 z-[70] flex max-w-sm items-start gap-3 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl" role="status" aria-live="polite">
+    // Mobile : au-dessus de la barre d'icônes du back-office
+    <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-4 right-4 z-[70] flex items-start gap-3 rounded-2xl bg-slate-900 p-4 text-white shadow-2xl sm:left-auto sm:max-w-sm lg:bottom-4" role="status" aria-live="polite">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500">
         <BellRing className="h-5 w-5" />
       </span>
